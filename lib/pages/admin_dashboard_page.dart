@@ -127,7 +127,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               "See feedback activity",
               Icons.feedback_outlined,
               () {
-                // TODO: Navigate to feedback page
+                
               },
             ),
             _buildDashboardButton(
@@ -135,7 +135,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               "See system insights",
               Icons.bar_chart_outlined,
               () {
-                // TODO: Navigate to analytics page
+                
               },
             ),
 

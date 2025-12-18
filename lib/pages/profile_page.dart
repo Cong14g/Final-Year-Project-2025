@@ -15,15 +15,21 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final authService = AuthService();
   final supabase = Supabase.instance.client;
+  final authService = AuthService();
 
   String name = '';
   String email = '';
   String role = '';
   File? profileImage;
+
   bool isEditingName = false;
   final _nameController = TextEditingController();
+
+  int? targetCalories;
+  final _targetController = TextEditingController();
+  bool isLoadingTarget = true;
+  bool isSavingTarget = false;
 
   bool isInFamily = false;
 
@@ -31,30 +37,24 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _loadProfileData();
+    _loadCalorieTarget();
     _checkIfUserInFamily();
   }
 
+  // ================= PROFILE =================
+
   void _loadProfileData() {
     final user = supabase.auth.currentUser;
-    if (!mounted) return;
+    if (user == null) return;
 
-    final metadata = user?.userMetadata;
+    final metadata = user.userMetadata;
 
     setState(() {
-      email = user?.email ?? '';
       name = metadata?['first_name'] ?? 'User';
       role = metadata?['role'] ?? 'user';
+      email = user.email ?? '';
       _nameController.text = name;
     });
-  }
-
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-
-    if (picked != null) {
-      setState(() => profileImage = File(picked.path));
-    }
   }
 
   Future<void> _updateName() async {
@@ -69,7 +69,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     if (!mounted) return;
-
     setState(() {
       name = newName;
       isEditingName = false;
@@ -77,185 +76,201 @@ class _ProfilePageState extends State<ProfilePage> {
 
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text("Name updated successfully")));
+    ).showSnackBar(const SnackBar(content: Text('Name updated successfully')));
   }
 
-  Future<void> _logout() async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
+  // ================= CALORIE TARGET =================
 
-    if (shouldLogout != true) return;
+  Future<void> _loadCalorieTarget() async {
+    final user = supabase.auth.currentUser;
 
-    await authService.signOut();
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
-    );
+    if (user == null) {
+      if (mounted) setState(() => isLoadingTarget = false);
+      return;
+    }
+
+    try {
+      final res = await supabase
+          .from('daily_targets')
+          .select('target_calories')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (res != null && res['target_calories'] != null) {
+        targetCalories = res['target_calories'];
+        _targetController.text = targetCalories.toString();
+      }
+    } finally {
+      if (mounted) setState(() => isLoadingTarget = false);
+    }
   }
+
+  Future<void> _saveTargetCalories() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final parsed = int.tryParse(_targetController.text.trim());
+    if (parsed == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid number')));
+      return;
+    }
+
+    setState(() => isSavingTarget = true);
+
+    try {
+      await supabase.from('daily_targets').upsert({
+        'user_id': user.id,
+        'target_calories': parsed,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      if (!mounted) return;
+      setState(() => targetCalories = parsed);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Daily calorie target saved')),
+      );
+    } finally {
+      if (mounted) setState(() => isSavingTarget = false);
+    }
+  }
+
+  // ================= FAMILY =================
 
   Future<void> _checkIfUserInFamily() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final isAdmin = await supabase
+    final adminRes = await supabase
         .from('families')
         .select('id')
         .eq('admin_user_id', user.id)
         .maybeSingle();
 
-    if (isAdmin != null) {
+    if (adminRes != null) {
       setState(() => isInFamily = true);
       return;
     }
 
-    final isMember = await supabase
+    final memberRes = await supabase
         .from('family_members')
         .select('id')
         .eq('email', user.email ?? '')
         .maybeSingle();
 
-    if (isMember != null) {
+    if (memberRes != null) {
       setState(() => isInFamily = true);
     }
   }
 
-  void _goToFamilyRegister() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const FamilyRegisterPage()),
-    );
-  }
+  // ================= AVATAR =================
 
-  void _goToFeedbackPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const FeedbackPage()),
-    );
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      setState(() => profileImage = File(picked.path));
+    }
   }
 
   Widget _buildAvatar() {
-    if (profileImage != null) {
-      return CircleAvatar(
-        radius: 50,
-        backgroundImage: FileImage(profileImage!),
-      );
-    }
-
-    final initials = name.isNotEmpty
-        ? name.trim().split(" ").map((e) => e[0]).take(2).join()
-        : "U";
-
     return CircleAvatar(
       radius: 50,
       backgroundColor: const Color(0xFF008B8B),
-      child: Text(
-        initials.toUpperCase(),
-        style: const TextStyle(fontSize: 30, color: Colors.white),
+      backgroundImage: profileImage != null ? FileImage(profileImage!) : null,
+      child: profileImage == null
+          ? Text(
+              name.isNotEmpty ? name[0].toUpperCase() : 'U',
+              style: const TextStyle(fontSize: 32, color: Colors.white),
+            )
+          : null,
+    );
+  }
+
+  // ================= LOGOUT =================
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
-  }
 
-  Widget _buildInfoField(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.green, width: 2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-        ),
-        const SizedBox(height: 16),
-      ],
+    if (confirm != true) return;
+
+    await authService.signOut();
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (_) => false,
     );
   }
 
-  Widget _buildEditableName() {
+  // ================= UI =================
+
+  Widget _buildCalorieTargetField() {
+    if (isLoadingTarget) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: CircularProgressIndicator(),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Name", style: TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
+        const Text('Daily Calorie Target'),
+        const SizedBox(height: 6),
         Row(
           children: [
             Expanded(
               child: TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(border: OutlineInputBorder()),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.check, color: Color(0xFF008B8B)),
-              onPressed: _updateName,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-
-  Widget _buildRegisterAndFeedbackButtons() {
-    return Row(
-      children: [
-        if (!isInFamily) ...[
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _goToFamilyRegister,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF008B8B),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+                controller: _targetController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: 'Enter daily calorie goal',
+                  border: OutlineInputBorder(),
                 ),
               ),
-              child: const Text(
-                "Register Family",
-                style: TextStyle(color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton(
+              onPressed: isSavingTarget ? null : _saveTargetCalories,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF008B8B),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
               ),
+              child: isSavingTarget
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Save', style: TextStyle(color: Colors.white)),
             ),
-          ),
-          const SizedBox(width: 12),
-        ],
-        Expanded(
-          child: ElevatedButton(
-            onPressed: _goToFeedbackPage,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF008B8B),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-            ),
-            child: const Text(
-              "Feedback",
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
+          ],
         ),
       ],
     );
@@ -265,7 +280,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Profile", style: TextStyle(color: Colors.white)),
+        title: const Text('Profile', style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF008B8B),
         centerTitle: true,
       ),
@@ -273,51 +288,123 @@ class _ProfilePageState extends State<ProfilePage> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const SizedBox(height: 16),
             _buildAvatar(),
             TextButton(
               onPressed: _pickImage,
-              child: const Text(
-                "Change Photo",
-                style: TextStyle(color: Color(0xFF008B8B)),
-              ),
+              child: const Text('Change Photo'),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
+            // Name + Email
             isEditingName
-                ? _buildEditableName()
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                ? Row(
                     children: [
-                      Expanded(child: _buildInfoField("Name", name)),
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
                       IconButton(
-                        onPressed: () {
-                          setState(() => isEditingName = true);
-                        },
-                        icon: const Icon(Icons.edit, color: Color(0xFF008B8B)),
+                        icon: const Icon(Icons.check),
+                        onPressed: _updateName,
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.green, width: 2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                email,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => setState(() => isEditingName = true),
                       ),
                     ],
                   ),
 
-            _buildInfoField("Email", email),
+            const SizedBox(height: 16),
+            _buildCalorieTargetField(),
+            const SizedBox(height: 24),
 
-            const SizedBox(height: 10),
-            _buildRegisterAndFeedbackButtons(),
-
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                onPressed: _logout,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+            // ✅ Register Family (only if NOT in family)
+            if (!isInFamily)
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7AC943),
+                  ),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FamilyRegisterPage(),
+                    ),
+                  ),
+                  child: const Text(
+                    'Register Family',
+                    style: TextStyle(color: Colors.white),
                   ),
                 ),
+              ),
+
+            if (!isInFamily) const SizedBox(height: 12),
+
+            // Feedback
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF008B8B),
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                ),
                 child: const Text(
-                  "Logout",
+                  'Feedback',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Logout
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: _logout,
+                child: const Text(
+                  'Logout',
                   style: TextStyle(color: Colors.white),
                 ),
               ),

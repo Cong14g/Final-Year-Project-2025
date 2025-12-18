@@ -66,7 +66,7 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  // Search bar
+                 
                   TextField(
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search),
@@ -81,7 +81,7 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Header row
+                  
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     color: const Color(0xFF00695C),
@@ -116,7 +116,7 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                     ),
                   ),
 
-                  // User list
+                 
                   Expanded(
                     child: ListView.builder(
                       itemCount: filteredUsers.length,
@@ -161,7 +161,7 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                               ),
                               Expanded(child: Text(user['role'] ?? 'User')),
 
-                              // Actions
+                             
                               Row(
                                 children: [
                                   IconButton(
@@ -170,7 +170,7 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                                       color: Colors.orange,
                                     ),
                                     onPressed: () {
-                                      // TODO: Add edit user modal
+                                     
                                     },
                                   ),
                                   IconButton(

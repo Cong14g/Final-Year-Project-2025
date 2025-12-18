@@ -152,7 +152,6 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
             children: [
               const SizedBox(height: 16),
 
-              // Back button
               Align(
                 alignment: Alignment.topLeft,
                 child: InkWell(

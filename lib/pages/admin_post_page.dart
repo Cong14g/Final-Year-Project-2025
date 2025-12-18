@@ -33,7 +33,6 @@ class _AdminPostPageState extends State<AdminPostPage> {
     }
   }
 
-  // PICK TIME
   Future<void> pickTime() async {
     final picked = await showTimePicker(
       context: context,
