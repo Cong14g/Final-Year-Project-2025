@@ -20,7 +20,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   String name = '';
   String email = '';
-  String role = '';
   File? profileImage;
 
   bool isEditingName = false;
@@ -41,17 +40,12 @@ class _ProfilePageState extends State<ProfilePage> {
     _checkIfUserInFamily();
   }
 
-  // ================= PROFILE =================
-
   void _loadProfileData() {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final metadata = user.userMetadata;
-
     setState(() {
-      name = metadata?['first_name'] ?? 'User';
-      role = metadata?['role'] ?? 'user';
+      name = user.userMetadata?['first_name'] ?? 'User';
       email = user.email ?? '';
       _nameController.text = name;
     });
@@ -74,18 +68,18 @@ class _ProfilePageState extends State<ProfilePage> {
       isEditingName = false;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Name updated successfully')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Name updated successfully'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
-
-  // ================= CALORIE TARGET =================
 
   Future<void> _loadCalorieTarget() async {
     final user = supabase.auth.currentUser;
-
     if (user == null) {
-      if (mounted) setState(() => isLoadingTarget = false);
+      setState(() => isLoadingTarget = false);
       return;
     }
 
@@ -96,9 +90,9 @@ class _ProfilePageState extends State<ProfilePage> {
           .eq('user_id', user.id)
           .maybeSingle();
 
-      if (res != null && res['target_calories'] != null) {
+      if (res != null) {
         targetCalories = res['target_calories'];
-        _targetController.text = targetCalories.toString();
+        _targetController.text = targetCalories?.toString() ?? '';
       }
     } finally {
       if (mounted) setState(() => isLoadingTarget = false);
@@ -110,12 +104,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (user == null) return;
 
     final parsed = int.tryParse(_targetController.text.trim());
-    if (parsed == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Enter a valid number')));
-      return;
-    }
+    if (parsed == null) return;
 
     setState(() => isSavingTarget = true);
 
@@ -130,149 +119,75 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() => targetCalories = parsed);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Daily calorie target saved')),
+        const SnackBar(
+          content: Text('Daily calorie target saved successfully'),
+          backgroundColor: Color(0xFF7AC943), // app green
+          duration: Duration(seconds: 2),
+        ),
       );
     } finally {
       if (mounted) setState(() => isSavingTarget = false);
     }
   }
 
-  // ================= FAMILY =================
-
   Future<void> _checkIfUserInFamily() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final adminRes = await supabase
+    final admin = await supabase
         .from('families')
         .select('id')
         .eq('admin_user_id', user.id)
         .maybeSingle();
 
-    if (adminRes != null) {
+    if (admin != null) {
       setState(() => isInFamily = true);
       return;
     }
 
-    final memberRes = await supabase
+    final member = await supabase
         .from('family_members')
         .select('id')
         .eq('email', user.email ?? '')
         .maybeSingle();
 
-    if (memberRes != null) {
-      setState(() => isInFamily = true);
-    }
+    if (member != null) setState(() => isInFamily = true);
   }
-
-  // ================= AVATAR =================
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() => profileImage = File(picked.path));
-    }
+    if (picked != null) setState(() => profileImage = File(picked.path));
   }
 
-  Widget _buildAvatar() {
-    return CircleAvatar(
-      radius: 50,
-      backgroundColor: const Color(0xFF008B8B),
-      backgroundImage: profileImage != null ? FileImage(profileImage!) : null,
-      child: profileImage == null
-          ? Text(
-              name.isNotEmpty ? name[0].toUpperCase() : 'U',
-              style: const TextStyle(fontSize: 32, color: Colors.white),
-            )
-          : null,
-    );
-  }
-
-  // ================= LOGOUT =================
-
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    await authService.signOut();
-    if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
-  }
-
-  // ================= UI =================
-
-  Widget _buildCalorieTargetField() {
-    if (isLoadingTarget) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: CircularProgressIndicator(),
-      );
-    }
-
+  Widget _inputBox({required String label, required Widget child}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Daily Calorie Target'),
+        Text(label),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _targetController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: 'Enter daily calorie goal',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            ElevatedButton(
-              onPressed: isSavingTarget ? null : _saveTargetCalories,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF008B8B),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-              ),
-              child: isSavingTarget
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Save', style: TextStyle(color: Colors.white)),
-            ),
-          ],
+        Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.green, width: 2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: child,
         ),
       ],
+    );
+  }
+
+  Widget _fullButton(String text, Color color, VoidCallback onPressed) {
+    return SizedBox(
+      height: 48,
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: color),
+        onPressed: onPressed,
+        child: Text(text, style: const TextStyle(color: Colors.white)),
+      ),
     );
   }
 
@@ -288,127 +203,137 @@ class _ProfilePageState extends State<ProfilePage> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            _buildAvatar(),
-            TextButton(
-              onPressed: _pickImage,
-              child: const Text('Change Photo'),
+            CircleAvatar(
+              radius: 48,
+              backgroundColor: const Color(0xFF008B8B),
+              backgroundImage: profileImage != null
+                  ? FileImage(profileImage!)
+                  : null,
+              child: profileImage == null
+                  ? Text(
+                      name[0].toUpperCase(),
+                      style: const TextStyle(fontSize: 28, color: Colors.white),
+                    )
+                  : null,
             ),
+            TextButton(onPressed: _pickImage, child: const Text('Edit')),
+
             const SizedBox(height: 16),
 
-            // Name + Email
-            isEditingName
-                ? Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _nameController,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.check),
-                        onPressed: _updateName,
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.green, width: 2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                email,
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => setState(() => isEditingName = true),
-                      ),
-                    ],
+            _inputBox(
+              label: 'Name',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: isEditingName
+                        ? TextField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                            ),
+                          )
+                        : Text(name),
                   ),
+                  IconButton(
+                    icon: Icon(
+                      isEditingName ? Icons.check : Icons.edit,
+                      color: Colors.green,
+                    ),
+                    onPressed: isEditingName
+                        ? _updateName
+                        : () => setState(() => isEditingName = true),
+                  ),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 16),
-            _buildCalorieTargetField(),
+
+            _inputBox(
+              label: 'Email',
+              child: Align(alignment: Alignment.centerLeft, child: Text(email)),
+            ),
+
             const SizedBox(height: 24),
 
-            // ✅ Register Family (only if NOT in family)
-            if (!isInFamily)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7AC943),
-                  ),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const FamilyRegisterPage(),
+            _inputBox(
+              label: 'Daily Calories Target',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _targetController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                      ),
                     ),
                   ),
-                  child: const Text(
-                    'Register Family',
-                    style: TextStyle(color: Colors.white),
+                  ElevatedButton(
+                    onPressed: isSavingTarget ? null : _saveTargetCalories,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF008B8B),
+                    ),
+                    child: const Text(
+                      'Save',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
-                ),
+                ],
               ),
+            ),
 
-            if (!isInFamily) const SizedBox(height: 12),
+            const SizedBox(height: 24),
 
-            // Feedback
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF008B8B),
-                ),
-                onPressed: () => Navigator.push(
+            if (!isInFamily)
+              Row(
+                children: [
+                  Expanded(
+                    child: _fullButton(
+                      'Register Family',
+                      const Color(0xFF008B8B),
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const FamilyRegisterPage(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _fullButton(
+                      'Feedback',
+                      const Color(0xFF008B8B),
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              _fullButton(
+                'Feedback',
+                const Color(0xFF008B8B),
+                () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const FeedbackPage()),
                 ),
-                child: const Text(
-                  'Feedback',
-                  style: TextStyle(color: Colors.white),
-                ),
               ),
-            ),
 
             const SizedBox(height: 12),
 
-            // Logout
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: _logout,
-                child: const Text(
-                  'Logout',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ),
+            _fullButton('Logout', Colors.red, () async {
+              await authService.signOut();
+              if (!mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginPage()),
+                (_) => false,
+              );
+            }),
           ],
         ),
       ),

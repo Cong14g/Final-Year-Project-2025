@@ -1,10 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-
 import 'scan_result_page.dart';
 
 class CameraScanPage extends StatefulWidget {
@@ -23,7 +21,6 @@ class _CameraScanPageState extends State<CameraScanPage> {
   static const String apiUrl =
       "https://nuryzhamzah-eatwise-api.hf.space/predict";
 
-  // 📸 Open camera
   Future<void> _openCamera() async {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
@@ -31,13 +28,21 @@ class _CameraScanPageState extends State<CameraScanPage> {
     );
 
     if (picked != null) {
-      setState(() {
-        _image = File(picked.path);
-      });
+      setState(() => _image = File(picked.path));
     }
   }
 
-  // 🔍 Scan & navigate
+  Future<void> _openGallery() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+
+    if (picked != null) {
+      setState(() => _image = File(picked.path));
+    }
+  }
+
   Future<void> _scanImage() async {
     if (_image == null) return;
 
@@ -88,6 +93,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
+            // Image Preview
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -99,7 +105,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
                 child: _image == null
                     ? const Center(
                         child: Text(
-                          "No image captured",
+                          "No image selected",
                           style: TextStyle(color: Colors.grey),
                         ),
                       )
@@ -109,7 +115,9 @@ class _CameraScanPageState extends State<CameraScanPage> {
                       ),
               ),
             ),
+
             const SizedBox(height: 20),
+
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -122,7 +130,21 @@ class _CameraScanPageState extends State<CameraScanPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _openGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text("Upload from Gallery"),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
             SizedBox(
               width: double.infinity,
               height: 50,

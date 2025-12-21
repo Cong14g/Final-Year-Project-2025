@@ -4,24 +4,15 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AiScanService {
-  // 🔗 Your FastAPI endpoint (HF Space)
   static const String _apiUrl =
       'https://nuryzhamzah-eatwise-api.hf.space/predict';
 
-  // =============================
-  // 1️⃣ CALL AI MODEL
-  // =============================
   static Future<Map<String, dynamic>> callEatWiseAPI(File imageFile) async {
     try {
       final uri = Uri.parse(_apiUrl);
 
       final request = http.MultipartRequest('POST', uri)
-        ..files.add(
-          await http.MultipartFile.fromPath(
-            'image', // MUST match FastAPI parameter
-            imageFile.path,
-          ),
-        );
+        ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
 
       final response = await request.send().timeout(
         const Duration(seconds: 30),
@@ -43,9 +34,6 @@ class AiScanService {
     }
   }
 
-  // =============================
-  // 2️⃣ SAVE RESULT TO SUPABASE
-  // =============================
   static Future<void> saveScanResult({
     required String foodName,
     required int calories,

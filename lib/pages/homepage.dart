@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'profile_page.dart';
 import 'family_members_page.dart';
+import 'camera_scan_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   final supabase = Supabase.instance.client;
+
   int _selectedIndex = 0;
 
   List<Map<String, dynamic>> posts = [];
   List<Map<String, dynamic>> todayLogs = [];
+
   bool isLoadingPosts = true;
   bool isLoadingDashboard = true;
 
   int totalCaloriesToday = 0;
-  int targetCalories = 0;
+  int targetCalories = 2000;
 
   @override
   void initState() {
@@ -28,11 +33,9 @@ class _HomePageState extends State<HomePage> {
     fetchCalorieDashboard();
   }
 
-  // ---------------- POSTS ----------------
-
   Future<void> fetchPosts() async {
     try {
-      final response = await supabase
+      final res = await supabase
           .from('posts')
           .select()
           .lte('publish_at', DateTime.now().toIso8601String())
@@ -41,25 +44,24 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
 
       setState(() {
-        posts = List<Map<String, dynamic>>.from(response);
+        posts = List<Map<String, dynamic>>.from(res);
         isLoadingPosts = false;
       });
     } catch (e) {
-      debugPrint('Error fetching posts: $e');
+      debugPrint('Posts error: $e');
       if (mounted) setState(() => isLoadingPosts = false);
     }
   }
 
-  // ---------------- DASHBOARDASHBOARD ----------------
-
   Future<void> fetchCalorieDashboard() async {
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
 
       final targetRes = await supabase
           .from('daily_targets')
           .select('target_calories')
-          .eq('user_id', userId)
+          .eq('user_id', user.id)
           .order('updated_at', ascending: false)
           .limit(1)
           .maybeSingle();
@@ -68,38 +70,47 @@ class _HomePageState extends State<HomePage> {
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
-      final todayEnd = todayStart.add(
-        const Duration(hours: 23, minutes: 59, seconds: 59),
-      );
 
-      final logRes = await supabase
+      final logsRes = await supabase
           .from('calorie_logs')
-          .select()
-          .eq('user_id', userId)
-          .gte('timestamp', todayStart.toIso8601String())
-          .lte('timestamp', todayEnd.toIso8601String())
-          .order('timestamp', ascending: false);
+          .select('calories, created_at')
+          .eq('user_id', user.id)
+          .gte('created_at', todayStart.toIso8601String())
+          .order('created_at', ascending: false);
 
-      todayLogs = List<Map<String, dynamic>>.from(logRes);
+      todayLogs = List<Map<String, dynamic>>.from(logsRes);
+
       totalCaloriesToday = todayLogs.fold(0, (sum, log) {
         final cal = log['calories'];
-        final parsed = cal is int ? cal : int.tryParse(cal.toString()) ?? 0;
-        return sum + parsed;
+        return sum + (cal is int ? cal : int.tryParse(cal.toString()) ?? 0);
       });
 
       if (mounted) setState(() => isLoadingDashboard = false);
     } catch (e) {
-      debugPrint('Error fetching dashboard data: $e');
+      debugPrint('Dashboard error: $e');
       if (mounted) setState(() => isLoadingDashboard = false);
     }
   }
 
-  Future<String?> _getFirstName() async {
+  Future<String> _getFirstName() async {
     final user = supabase.auth.currentUser;
     return user?.userMetadata?['first_name'] ?? 'User';
   }
 
-  void _onTabTapped(int index) {
+  Future<void> _onNavTap(int index) async {
+    if (index == 1) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const CameraScanPage()),
+      );
+
+      if (result == true) {
+        setState(() => isLoadingDashboard = true);
+        await fetchCalorieDashboard();
+      }
+      return;
+    }
+
     setState(() => _selectedIndex = index);
 
     if (index == 0) {
@@ -108,14 +119,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ---------------- UI ----------------
-
   Widget _buildDashboardCard() {
-    final percentage = targetCalories > 0
-        ? totalCaloriesToday / targetCalories
+    final percent = targetCalories > 0
+        ? (totalCaloriesToday / targetCalories).clamp(0.0, 1.0)
         : 0.0;
-    final clampedPercent = percentage.clamp(0.0, 1.0);
-    final caloriesLeft = targetCalories - totalCaloriesToday;
+
+    final left = targetCalories - totalCaloriesToday;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -138,7 +147,7 @@ class _HomePageState extends State<HomePage> {
                 height: 140,
                 width: 140,
                 child: CircularProgressIndicator(
-                  value: clampedPercent,
+                  value: percent,
                   strokeWidth: 12,
                   backgroundColor: Colors.grey[300],
                   color: Colors.teal,
@@ -149,25 +158,22 @@ class _HomePageState extends State<HomePage> {
                   Text(
                     "$totalCaloriesToday kcal",
                     style: const TextStyle(
-                      fontWeight: FontWeight.bold,
                       fontSize: 22,
+                      fontWeight: FontWeight.bold,
                       color: Colors.teal,
                     ),
                   ),
-                  const SizedBox(height: 4),
                   Text("of $targetCalories kcal"),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Text(
-            caloriesLeft >= 0
-                ? "$caloriesLeft kcal left"
-                : "${-caloriesLeft} kcal over",
+            left >= 0 ? "$left kcal left" : "${-left} kcal over",
             style: TextStyle(
               fontSize: 16,
-              color: caloriesLeft >= 0 ? Colors.green : Colors.red,
+              color: left >= 0 ? Colors.green : Colors.red,
             ),
           ),
         ],
@@ -175,11 +181,75 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildPostCard(Map<String, dynamic> post) {
+    final publishAt =
+        DateTime.tryParse(post['publish_at'] ?? '') ?? DateTime.now();
+
+    final formattedDate =
+        "${publishAt.day.toString().padLeft(2, '0')} "
+        "${_monthName(publishAt.month)} ${publishAt.year}";
+
+    return Container(
+      height: 140,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            post['title'] ?? 'Untitled',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Text(
+              post['content'] ?? '',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Text(
+              'Published • $formattedDate',
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _monthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
   Widget _buildHomeTab() {
-    return FutureBuilder<String?>(
+    return FutureBuilder<String>(
       future: _getFirstName(),
       builder: (context, snapshot) {
-        final firstName = snapshot.data ?? 'User';
+        final name = snapshot.data ?? 'User';
 
         return Scaffold(
           backgroundColor: const Color(0xFFF5F5F5),
@@ -196,7 +266,7 @@ class _HomePageState extends State<HomePage> {
             child: ListView(
               children: [
                 Text(
-                  'Welcome back, $firstName 👋',
+                  'Welcome back, $name 👋',
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -204,13 +274,15 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 24),
+
                 isLoadingDashboard
                     ? const Center(child: CircularProgressIndicator())
                     : _buildDashboardCard(),
-                const SizedBox(height: 32),
+
+                const SizedBox(height: 24),
 
                 const Text(
-                  "📢 Latest Posts",
+                  "🍽 Today's Logs",
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -218,74 +290,46 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                isLoadingPosts
-                    ? const Center(child: CircularProgressIndicator())
-                    : posts.isEmpty
-                    ? const Text("No posts yet.")
-                    : Column(
-                        children: posts.map((post) {
-                          final publishAt =
-                              DateTime.tryParse(post['publish_at'] ?? '') ??
-                              DateTime.now();
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 6,
-                                  offset: Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  post['title'] ?? 'Untitled',
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(post['content'] ?? ''),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: const [
-                                        Text(
-                                          "👍",
-                                          style: TextStyle(fontSize: 22),
-                                        ),
-                                        SizedBox(width: 12),
-                                        Text(
-                                          "❤️",
-                                          style: TextStyle(fontSize: 22),
-                                        ),
-                                      ],
-                                    ),
-                                    Text(
-                                      'Published: ${publishAt.toLocal()}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                todayLogs.isEmpty
+                    ? const Text(
+                        'No food logged today yet.',
+                        style: TextStyle(color: Colors.grey),
+                      )
+                    : Column(
+                        children: todayLogs.map((log) {
+                          return Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.fastfood),
+                              title: Text('${log['calories']} kcal'),
+                              subtitle: Text(
+                                DateTime.parse(
+                                  log['created_at'],
+                                ).toLocal().toString(),
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
                           );
                         }).toList(),
                       ),
+
+                const SizedBox(height: 32),
+
+                const Text(
+                  '📢 Latest Posts',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                isLoadingPosts
+                    ? const Center(child: CircularProgressIndicator())
+                    : posts.isEmpty
+                    ? const Text('No posts yet.')
+                    : Column(children: posts.map(_buildPostCard).toList()),
               ],
             ),
           ),
@@ -294,10 +338,48 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildCameraTab() {
-    return const Scaffold(
-      body: Center(
-        child: Text('Camera coming soon 📷', style: TextStyle(fontSize: 18)),
+  Widget _buildBottomNav() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Container(
+        height: 64,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _navIcon(Icons.home, 0),
+            _navIcon(Icons.qr_code_scanner, 1),
+            _navIcon(Icons.group, 2),
+            _navIcon(Icons.person, 3),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navIcon(IconData icon, int index) {
+    final isActive = _selectedIndex == index;
+    return InkWell(
+      onTap: () => _onNavTap(index),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: isActive ? Colors.green : Colors.grey),
+          const SizedBox(height: 4),
+          if (isActive)
+            Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -306,25 +388,14 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final tabs = [
       _buildHomeTab(),
-      _buildCameraTab(),
+      const SizedBox(),
       const FamilyMembersPage(),
       const ProfilePage(),
     ];
 
     return Scaffold(
       body: tabs[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onTabTapped,
-        selectedItemColor: const Color(0xFF008B8B),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.camera_alt), label: 'Scan'),
-          BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Family'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-      ),
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 }

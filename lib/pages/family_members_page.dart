@@ -22,8 +22,6 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
     fetchFamilyMembers();
   }
 
-  // ================= FETCH FAMILY MEMBERS =================
-
   Future<void> fetchFamilyMembers() async {
     try {
       final user = supabase.auth.currentUser;
@@ -89,8 +87,6 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
     }
   }
 
-  // ================= ADD FAMILY MEMBER =================
-
   void _showAddMemberDialog() {
     final nameCtrl = TextEditingController();
     final ageCtrl = TextEditingController();
@@ -153,8 +149,6 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
     );
   }
 
-  // ================= CALORIES FROM LOGS =================
-
   Future<int> _fetchTodayCaloriesByEmail(String email) async {
     final today = DateTime.now();
     final start = DateTime(today.year, today.month, today.day);
@@ -167,8 +161,6 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
 
     return data.fold<int>(0, (sum, row) => sum + (row['calories'] as int));
   }
-
-  // ================= EDIT MEMBER =================
 
   void _showEditDialog(Map<String, dynamic> member) {
     final nameCtrl = TextEditingController(text: member['name']);
@@ -234,8 +226,6 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
       ),
     );
   }
-
-  // ================= MEMBER CARD =================
 
   Widget _buildMemberCard(Map<String, dynamic> member) {
     final int targetCalories = member['calorie_target'] ?? 2000;
@@ -330,7 +320,30 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
     );
   }
 
-  // ================= PAGE =================
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.group_outlined, size: 80, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'No family members yet',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Start by adding your first family member\nand track calories together 💚',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -344,6 +357,8 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
+          : familyMembers.isEmpty
+          ? _buildEmptyState()
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: familyMembers.length,
