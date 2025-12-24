@@ -13,16 +13,27 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
 
   final _groupNameController = TextEditingController();
   final _adminNameController = TextEditingController();
-  final _relationshipController = TextEditingController();
-  final _adminEmailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+
+  String? _adminRelationship;
+
+  final List<String> relationships = [
+    'Father',
+    'Mother',
+    'Son',
+    'Daughter',
+    'Brother',
+    'Sister',
+    'Spouse',
+    'Grandparent',
+    'Guardian',
+    'Other',
+  ];
 
   List<Map<String, dynamic>> members = [];
 
   void _addMemberField() {
     setState(() {
-      members.add({'name': '', 'age': '', 'email': ''});
+      members.add({'name': '', 'age': '', 'email': '', 'relationship': null});
     });
   }
 
@@ -35,40 +46,29 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
   Future<void> _submit() async {
     final groupName = _groupNameController.text.trim();
     final adminName = _adminNameController.text.trim();
-    final relationship = _relationshipController.text.trim();
-    final adminEmail = _adminEmailController.text.trim();
-    final password = _passwordController.text.trim();
-    final confirmPassword = _confirmPasswordController.text.trim();
-    final userId = supabase.auth.currentUser?.id;
+    final user = supabase.auth.currentUser;
 
     if (groupName.isEmpty ||
         adminName.isEmpty ||
-        relationship.isEmpty ||
-        adminEmail.isEmpty ||
-        password.isEmpty ||
-        confirmPassword.isEmpty ||
-        userId == null) {
+        _adminRelationship == null ||
+        user == null ||
+        user.email == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all required fields')),
       );
       return;
     }
 
-    if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
-      return;
-    }
+    final adminEmail = user.email!;
 
     try {
       final familyInsert = await supabase
           .from('families')
           .insert({
             'group_name': groupName,
-            'admin_user_id': userId,
+            'admin_user_id': user.id,
             'admin_name': adminName,
-            'relationship': relationship,
+            'relationship': _adminRelationship,
             'email': adminEmail,
           })
           .select()
@@ -76,20 +76,43 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
 
       final familyId = familyInsert['id'];
 
+      await supabase.from('family_members').insert({
+        'family_id': familyId,
+        'name': adminName,
+        'email': adminEmail,
+        'relationship': _adminRelationship,
+        'daily_calories': 0,
+        'calorie_target': 2000,
+        'is_admin': true,
+      });
+
       for (var member in members) {
+        if ((member['name'] ?? '').toString().isEmpty ||
+            member['relationship'] == null) {
+          continue;
+        }
+
         await supabase.from('family_members').insert({
           'family_id': familyId,
           'name': member['name'],
-          'age': int.tryParse(member['age'] ?? '0'),
+          'age': int.tryParse(member['age'] ?? ''),
           'email': member['email'],
+          'relationship': member['relationship'],
+          'daily_calories': 0,
+          'calorie_target': 2000,
+          'is_admin': false,
         });
       }
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Family registered successfully!')),
       );
-      Navigator.pop(context);
+
+      Navigator.pop(context, true);
     } catch (e) {
+      debugPrint('Family register error: $e');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
@@ -105,16 +128,16 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
+
+        TextField(
+          decoration: const InputDecoration(labelText: "Member Name"),
+          onChanged: (value) => members[index]['name'] = value,
+        ),
+
+        const SizedBox(height: 8),
+
         Row(
           children: [
-            Expanded(
-              flex: 2,
-              child: TextField(
-                decoration: const InputDecoration(labelText: "Member Name"),
-                onChanged: (value) => members[index]['name'] = value,
-              ),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: TextField(
                 decoration: const InputDecoration(labelText: "Age"),
@@ -122,12 +145,28 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
                 onChanged: (value) => members[index]['age'] = value,
               ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: members[index]['relationship'],
+                decoration: const InputDecoration(labelText: "Relationship"),
+                items: relationships
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => members[index]['relationship'] = value),
+              ),
+            ),
           ],
         ),
+
+        const SizedBox(height: 8),
+
         TextField(
           decoration: const InputDecoration(labelText: "Member Email"),
           onChanged: (value) => members[index]['email'] = value,
         ),
+
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
@@ -135,6 +174,7 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
             child: const Text("Remove", style: TextStyle(color: Colors.red)),
           ),
         ),
+
         const Divider(),
       ],
     );
@@ -148,7 +188,6 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 16),
 
@@ -156,29 +195,12 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
                 alignment: Alignment.topLeft,
                 child: InkWell(
                   onTap: () => Navigator.pop(context),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 4,
-                          offset: Offset(2, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.arrow_back, color: Colors.green),
-                  ),
+                  child: const Icon(Icons.arrow_back, color: Colors.green),
                 ),
               ),
 
               const SizedBox(height: 12),
-
               Image.asset('assets/logo2.png', width: 80, height: 80),
-
               const SizedBox(height: 12),
 
               const Text(
@@ -189,6 +211,7 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
                   color: Color(0xFF00796B),
                 ),
               ),
+
               const SizedBox(height: 20),
 
               TextField(
@@ -198,55 +221,33 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
                   border: OutlineInputBorder(),
                 ),
               ),
+
               const SizedBox(height: 12),
 
               TextField(
                 controller: _adminNameController,
                 decoration: const InputDecoration(
-                  labelText: "Admin name",
+                  labelText: "Admin Name",
                   border: OutlineInputBorder(),
                 ),
               ),
+
               const SizedBox(height: 12),
 
-              TextField(
-                controller: _relationshipController,
+              DropdownButtonFormField<String>(
+                value: _adminRelationship,
                 decoration: const InputDecoration(
                   labelText: "Relationship to Family",
                   border: OutlineInputBorder(),
                 ),
-              ),
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: _adminEmailController,
-                decoration: const InputDecoration(
-                  labelText: "Email",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: "Password",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: _confirmPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: "Confirm Password",
-                  border: OutlineInputBorder(),
-                ),
+                items: relationships
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _adminRelationship = value),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
               Align(
                 alignment: Alignment.centerLeft,
@@ -258,18 +259,15 @@ class _FamilyRegisterPageState extends State<FamilyRegisterPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
 
+              const SizedBox(height: 8),
               ...List.generate(members.length, _buildMemberForm),
 
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
                   onPressed: _addMemberField,
-                  child: const Text(
-                    "+ Add Another Family Members",
-                    style: TextStyle(color: Colors.blue),
-                  ),
+                  child: const Text("+ Add Another Family Member"),
                 ),
               ),
 

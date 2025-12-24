@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'profile_page.dart';
 import 'family_members_page.dart';
 import 'camera_scan_page.dart';
@@ -26,6 +25,8 @@ class _HomePageState extends State<HomePage> {
   int totalCaloriesToday = 0;
   int targetCalories = 2000;
 
+  String? familyMemberId;
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +34,9 @@ class _HomePageState extends State<HomePage> {
     fetchCalorieDashboard();
   }
 
+  // --------------------------------------------------
+  // FETCH POSTS
+  // --------------------------------------------------
   Future<void> fetchPosts() async {
     try {
       final res = await supabase
@@ -53,34 +57,45 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // --------------------------------------------------
+  // FETCH DASHBOARD (family_members is source of truth)
+  // --------------------------------------------------
   Future<void> fetchCalorieDashboard() async {
     try {
       final user = supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null || user.email == null) return;
 
-      final targetRes = await supabase
-          .from('daily_targets')
-          .select('target_calories')
-          .eq('user_id', user.id)
-          .order('updated_at', ascending: false)
-          .limit(1)
+      setState(() => isLoadingDashboard = true);
+
+      // 1️⃣ Get family member row
+      final memberRes = await supabase
+          .from('family_members')
+          .select('id, calorie_target')
+          .eq('email', user.email!)
           .maybeSingle();
 
-      targetCalories = targetRes?['target_calories'] ?? 2000;
+      if (memberRes == null) {
+        setState(() => isLoadingDashboard = false);
+        return;
+      }
 
+      familyMemberId = memberRes['id'];
+      targetCalories = memberRes['calorie_target'] ?? 2000;
+
+      // 2️⃣ Get today logs
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
 
       final logsRes = await supabase
           .from('calorie_logs')
           .select('calories, created_at')
-          .eq('user_id', user.id)
+          .eq('family_member_id', familyMemberId!)
           .gte('created_at', todayStart.toIso8601String())
           .order('created_at', ascending: false);
 
       todayLogs = List<Map<String, dynamic>>.from(logsRes);
 
-      totalCaloriesToday = todayLogs.fold(0, (sum, log) {
+      totalCaloriesToday = todayLogs.fold<int>(0, (sum, log) {
         final cal = log['calories'];
         return sum + (cal is int ? cal : int.tryParse(cal.toString()) ?? 0);
       });
@@ -92,11 +107,17 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // --------------------------------------------------
+  // AUTH FIRST NAME
+  // --------------------------------------------------
   Future<String> _getFirstName() async {
     final user = supabase.auth.currentUser;
     return user?.userMetadata?['first_name'] ?? 'User';
   }
 
+  // --------------------------------------------------
+  // NAVIGATION
+  // --------------------------------------------------
   Future<void> _onNavTap(int index) async {
     if (index == 1) {
       final result = await Navigator.push(
@@ -105,7 +126,6 @@ class _HomePageState extends State<HomePage> {
       );
 
       if (result == true) {
-        setState(() => isLoadingDashboard = true);
         await fetchCalorieDashboard();
       }
       return;
@@ -114,11 +134,13 @@ class _HomePageState extends State<HomePage> {
     setState(() => _selectedIndex = index);
 
     if (index == 0) {
-      setState(() => isLoadingDashboard = true);
-      fetchCalorieDashboard();
+      await fetchCalorieDashboard();
     }
   }
 
+  // --------------------------------------------------
+  // DASHBOARD CARD
+  // --------------------------------------------------
   Widget _buildDashboardCard() {
     final percent = targetCalories > 0
         ? (totalCaloriesToday / targetCalories).clamp(0.0, 1.0)
@@ -181,6 +203,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // --------------------------------------------------
+  // POST CARD (Option 1 – publishAt USED ✅)
+  // --------------------------------------------------
   Widget _buildPostCard(Map<String, dynamic> post) {
     final publishAt =
         DateTime.tryParse(post['publish_at'] ?? '') ?? DateTime.now();
@@ -245,6 +270,9 @@ class _HomePageState extends State<HomePage> {
     return months[month - 1];
   }
 
+  // --------------------------------------------------
+  // HOME TAB
+  // --------------------------------------------------
   Widget _buildHomeTab() {
     return FutureBuilder<String>(
       future: _getFirstName(),
@@ -338,6 +366,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // --------------------------------------------------
+  // BOTTOM NAV
+  // --------------------------------------------------
   Widget _buildBottomNav() {
     return Padding(
       padding: const EdgeInsets.all(12),

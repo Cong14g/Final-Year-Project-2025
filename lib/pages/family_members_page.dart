@@ -11,92 +11,124 @@ class FamilyMembersPage extends StatefulWidget {
 class _FamilyMembersPageState extends State<FamilyMembersPage> {
   final supabase = Supabase.instance.client;
 
-  List<Map<String, dynamic>> familyMembers = [];
+  List<Map<String, dynamic>> members = [];
   bool isLoading = true;
   bool isAdmin = false;
   String? familyId;
 
+  final relationships = [
+    'Father',
+    'Mother',
+    'Son',
+    'Daughter',
+    'Brother',
+    'Sister',
+    'Spouse',
+    'Guardian',
+    'Other',
+  ];
+
   @override
   void initState() {
     super.initState();
-    fetchFamilyMembers();
+    fetchMembers();
   }
 
-  Future<void> fetchFamilyMembers() async {
+  Future<void> fetchMembers() async {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return;
 
-      final adminFamilyRes = await supabase
+      final adminFamily = await supabase
           .from('families')
           .select()
           .eq('admin_user_id', user.id)
           .maybeSingle();
 
-      Map<String, dynamic>? familyMap;
-
-      if (adminFamilyRes != null) {
-        familyMap = Map<String, dynamic>.from(adminFamilyRes);
+      if (adminFamily != null) {
+        familyId = adminFamily['id'];
         isAdmin = true;
       } else {
-        final memberRes = await supabase
+        final member = await supabase
             .from('family_members')
             .select('family_id')
-            .eq('email', user.email ?? '')
+            .eq('email', user.email!)
             .maybeSingle();
 
-        if (memberRes == null) {
+        if (member == null) {
           setState(() {
-            familyMembers = [];
+            members = [];
             isLoading = false;
           });
           return;
         }
 
-        final familyRes = await supabase
-            .from('families')
-            .select()
-            .eq('id', memberRes['family_id'])
-            .maybeSingle();
-
-        if (familyRes == null) {
-          setState(() => isLoading = false);
-          return;
-        }
-
-        familyMap = Map<String, dynamic>.from(familyRes);
+        familyId = member['family_id'];
         isAdmin = false;
       }
 
-      familyId = familyMap['id'];
-
-      final membersRes = await supabase
+      final data = await supabase
           .from('family_members')
-          .select('id, name, age, email, calorie_target')
-          .eq('family_id', familyId!);
-
-      if (!mounted) return;
+          .select()
+          .eq('family_id', familyId!)
+          .order('is_admin', ascending: false);
 
       setState(() {
-        familyMembers = List<Map<String, dynamic>>.from(membersRes);
+        members = List<Map<String, dynamic>>.from(data);
         isLoading = false;
       });
     } catch (e) {
-      debugPrint('Error loading family members: $e');
-      if (mounted) setState(() => isLoading = false);
+      debugPrint('Fetch members error: $e');
+      setState(() => isLoading = false);
     }
   }
 
-  void _showAddMemberDialog() {
-    final nameCtrl = TextEditingController();
-    final ageCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final targetCtrl = TextEditingController(text: '2000');
+  Future<List<Map<String, dynamic>>> _fetchTodayLogs(String memberId) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+
+    final res = await supabase
+        .from('calorie_logs')
+        .select('food_name, calories, created_at')
+        .eq('family_member_id', memberId)
+        .gte('created_at', start.toIso8601String())
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  int _sumCalories(List<Map<String, dynamic>> logs) {
+    return logs.fold<int>(0, (sum, l) => sum + (l['calories'] as int));
+  }
+
+  Color _progressColor(double rawProgress) {
+    if (rawProgress <= 0.7) {
+      return Colors.green;
+    } else if (rawProgress <= 1.0) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  void _openMemberDialog({Map<String, dynamic>? member}) {
+    final nameCtrl = TextEditingController(text: member?['name']);
+    final ageCtrl = TextEditingController(
+      text: member?['age']?.toString() ?? '',
+    );
+    final emailCtrl = TextEditingController(text: member?['email']);
+    final calorieCtrl = TextEditingController(
+      text: member?['calorie_target']?.toString() ?? '2000',
+    );
+
+    String? relationship = member?['relationship'];
 
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Add Family Member'),
+        title: Text(
+          member == null ? 'Add Family Member' : 'Edit Family Member',
+        ),
         content: SingleChildScrollView(
           child: Column(
             children: [
@@ -109,13 +141,21 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
                 decoration: const InputDecoration(labelText: 'Age'),
                 keyboardType: TextInputType.number,
               ),
+              DropdownButtonFormField<String>(
+                value: relationship,
+                decoration: const InputDecoration(labelText: 'Relationship'),
+                items: relationships
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (v) => relationship = v,
+              ),
               TextField(
                 controller: emailCtrl,
                 decoration: const InputDecoration(labelText: 'Email'),
               ),
               TextField(
-                controller: targetCtrl,
-                decoration: const InputDecoration(labelText: 'Target Calories'),
+                controller: calorieCtrl,
+                decoration: const InputDecoration(labelText: 'Calorie Target'),
                 keyboardType: TextInputType.number,
               ),
             ],
@@ -130,95 +170,28 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
             onPressed: () async {
               if (familyId == null) return;
 
-              await supabase.from('family_members').insert({
+              final payload = {
                 'family_id': familyId,
                 'name': nameCtrl.text,
-                'age': int.tryParse(ageCtrl.text) ?? 0,
+                'age': int.tryParse(ageCtrl.text),
                 'email': emailCtrl.text,
-                'calorie_target': int.tryParse(targetCtrl.text) ?? 2000,
-              });
+                'relationship': relationship,
+                'calorie_target': int.tryParse(calorieCtrl.text) ?? 2000,
+              };
+
+              if (member == null) {
+                payload['is_admin'] = false;
+                await supabase.from('family_members').insert(payload);
+              } else {
+                await supabase
+                    .from('family_members')
+                    .update(payload)
+                    .eq('id', member['id']);
+              }
 
               if (!mounted) return;
               Navigator.pop(context);
-              fetchFamilyMembers();
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<int> _fetchTodayCaloriesByEmail(String email) async {
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day);
-
-    final data = await supabase
-        .from('calorie_logs')
-        .select('calories, users!inner(email)')
-        .eq('users.email', email)
-        .gte('created_at', start.toIso8601String());
-
-    return data.fold<int>(0, (sum, row) => sum + (row['calories'] as int));
-  }
-
-  void _showEditDialog(Map<String, dynamic> member) {
-    final nameCtrl = TextEditingController(text: member['name']);
-    final ageCtrl = TextEditingController(
-      text: member['age']?.toString() ?? '',
-    );
-    final emailCtrl = TextEditingController(text: member['email']);
-    final targetCtrl = TextEditingController(
-      text: member['calorie_target']?.toString() ?? '',
-    );
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit Family Member'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            TextField(
-              controller: ageCtrl,
-              decoration: const InputDecoration(labelText: 'Age'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: emailCtrl,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            TextField(
-              controller: targetCtrl,
-              decoration: const InputDecoration(labelText: 'Target Calories'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              await supabase
-                  .from('family_members')
-                  .update({
-                    'name': nameCtrl.text,
-                    'age': int.tryParse(ageCtrl.text) ?? 0,
-                    'email': emailCtrl.text,
-                    'calorie_target': int.tryParse(targetCtrl.text) ?? 2000,
-                  })
-                  .eq('id', member['id']);
-
-              if (!mounted) return;
-              Navigator.pop(context);
-              fetchFamilyMembers();
+              fetchMembers();
             },
             child: const Text('Save'),
           ),
@@ -227,20 +200,21 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
     );
   }
 
-  Widget _buildMemberCard(Map<String, dynamic> member) {
-    final int targetCalories = member['calorie_target'] ?? 2000;
+  Widget _buildMemberCard(Map<String, dynamic> m) {
+    final target = m['calorie_target'] ?? 2000;
 
-    return FutureBuilder<int>(
-      future: _fetchTodayCaloriesByEmail(member['email']),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchTodayLogs(m['id']),
       builder: (context, snapshot) {
-        final totalCalories = snapshot.data ?? 0;
-        final double progress = targetCalories > 0
-            ? (totalCalories / targetCalories).clamp(0.0, 1.0)
-            : 0.0;
+        final logs = snapshot.data ?? [];
+        final total = _sumCalories(logs);
+
+        final rawProgress = target > 0 ? total / target : 0.0;
+        final barValue = rawProgress.clamp(0.0, 1.0);
 
         return Dismissible(
-          key: ValueKey(member['id']),
-          direction: isAdmin
+          key: ValueKey(m['id']),
+          direction: isAdmin && m['is_admin'] != true
               ? DismissDirection.endToStart
               : DismissDirection.none,
           confirmDismiss: (_) async {
@@ -248,7 +222,9 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
                   context: context,
                   builder: (_) => AlertDialog(
                     title: const Text('Delete Member'),
-                    content: const Text('Are you sure?'),
+                    content: const Text(
+                      'Are you sure you want to remove this member?',
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -267,11 +243,8 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
                 false;
           },
           onDismissed: (_) async {
-            await supabase
-                .from('family_members')
-                .delete()
-                .eq('id', member['id']);
-            fetchFamilyMembers();
+            await supabase.from('family_members').delete().eq('id', m['id']);
+            fetchMembers();
           },
           background: Container(
             alignment: Alignment.centerRight,
@@ -280,68 +253,84 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
             child: const Icon(Icons.delete, color: Colors.white),
           ),
           child: Card(
-            margin: const EdgeInsets.symmetric(vertical: 10),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            child: ExpansionTile(
+              leading: CircleAvatar(
+                backgroundColor: const Color(0xFF008B8B),
+                child: Text(m['name'][0].toUpperCase()),
+              ),
+              title: Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          member['name'],
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (isAdmin)
-                        IconButton(
-                          icon: const Icon(
-                            Icons.edit,
-                            color: Color(0xFF7AC943),
-                          ),
-                          onPressed: () => _showEditDialog(member),
-                        ),
-                    ],
+                  Text(
+                    m['name'],
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(value: progress, minHeight: 12),
-                  const SizedBox(height: 8),
-                  Text('$totalCalories / $targetCalories kcal'),
+                  if (m['is_admin'] == true)
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'ADMIN',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
+                    ),
                 ],
               ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(
+                    value: barValue,
+                    minHeight: 10,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: AlwaysStoppedAnimation(
+                      _progressColor(rawProgress),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$total / $target kcal'),
+                ],
+              ),
+              trailing: isAdmin
+                  ? IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.green),
+                      onPressed: () => _openMemberDialog(member: m),
+                    )
+                  : null,
+              children: logs.isEmpty
+                  ? const [
+                      Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'No logs today',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ]
+                  : logs.map((log) {
+                      final time = DateTime.parse(log['created_at']).toLocal();
+                      return ListTile(
+                        leading: const Icon(Icons.fastfood),
+                        title: Text(log['food_name']),
+                        subtitle: Text(
+                          '${log['calories']} kcal • '
+                          '${time.hour.toString().padLeft(2, '0')}:'
+                          '${time.minute.toString().padLeft(2, '0')}',
+                        ),
+                      );
+                    }).toList(),
             ),
           ),
         );
       },
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.group_outlined, size: 80, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'No family members yet',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Start by adding your first family member\nand track calories together 💚',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -357,17 +346,17 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : familyMembers.isEmpty
-          ? _buildEmptyState()
+          : members.isEmpty
+          ? const Center(child: Text('No family members yet'))
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: familyMembers.length,
-              itemBuilder: (_, i) => _buildMemberCard(familyMembers[i]),
+              itemCount: members.length,
+              itemBuilder: (_, i) => _buildMemberCard(members[i]),
             ),
       floatingActionButton: isAdmin
           ? FloatingActionButton(
-              backgroundColor: const Color(0xFF008B8B),
-              onPressed: _showAddMemberDialog,
+              backgroundColor: const Color(0xFF7AC943),
+              onPressed: () => _openMemberDialog(),
               child: const Icon(Icons.person_add),
             )
           : null,

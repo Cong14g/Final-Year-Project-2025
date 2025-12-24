@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:eatwiseapp/pages/login_page.dart';
 import 'package:eatwiseapp/pages/admin_post_page.dart';
 import 'package:eatwiseapp/pages/admin_user_management_page.dart';
+import 'package:eatwiseapp/pages/feedback_admin_page.dart'; // ✅ ADD THIS
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -26,13 +28,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     adminInitial = firstName.isNotEmpty ? firstName[0].toUpperCase() : 'A';
   }
 
-  void _logout() async {
+  Future<void> _logout() async {
     await supabase.auth.signOut();
     if (!mounted) return;
+
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
+      (_) => false,
     );
   }
 
@@ -52,7 +55,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         leading: Icon(icon, color: Colors.teal.shade700),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle),
-        trailing: const Icon(Icons.arrow_forward_ios),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onPressed,
       ),
     );
@@ -82,6 +85,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         child: Column(
           children: [
             const SizedBox(height: 8),
+
             CircleAvatar(
               radius: 40,
               backgroundColor: const Color(0xFF008B8B),
@@ -90,11 +94,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 style: const TextStyle(fontSize: 36, color: Colors.white),
               ),
             ),
+
             const SizedBox(height: 12),
+
             Text(
               adminName,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
+
             const SizedBox(height: 24),
 
             _buildDashboardButton(
@@ -122,20 +129,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 );
               },
             ),
+
             _buildDashboardButton(
               "Feedback",
               "See feedback activity",
               Icons.feedback_outlined,
               () {
-                
-              },
-            ),
-            _buildDashboardButton(
-              "Analytics & Report",
-              "See system insights",
-              Icons.bar_chart_outlined,
-              () {
-                
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminFeedbackPage()),
+                );
               },
             ),
 
@@ -158,6 +161,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 20),
           ],
         ),

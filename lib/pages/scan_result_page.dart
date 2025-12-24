@@ -2,25 +2,27 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class ScanResultPage extends StatefulWidget {
+class ScanResultSheet extends StatefulWidget {
   final File imageFile;
   final Map<String, dynamic> result;
+  final String familyMemberId;
 
-  const ScanResultPage({
+  const ScanResultSheet({
     super.key,
     required this.imageFile,
     required this.result,
+    required this.familyMemberId,
   });
 
   @override
-  State<ScanResultPage> createState() => _ScanResultPageState();
+  State<ScanResultSheet> createState() => _ScanResultSheetState();
 }
 
-class _ScanResultPageState extends State<ScanResultPage> {
+class _ScanResultSheetState extends State<ScanResultSheet> {
+  final supabase = Supabase.instance.client;
+
   late TextEditingController _calorieController;
   bool isSaving = false;
-
-  final supabase = Supabase.instance.client;
 
   late int protein;
   late int carbs;
@@ -54,26 +56,24 @@ class _ScanResultPageState extends State<ScanResultPage> {
     super.dispose();
   }
 
-  Future<void> _saveResult() async {
-    final editedCalories = int.tryParse(_calorieController.text.trim());
-
-    if (editedCalories == null || editedCalories <= 0) {
+  Future<void> _confirmAndSave() async {
+    final calories = int.tryParse(_calorieController.text.trim());
+    if (calories == null || calories <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid calorie value')),
       );
       return;
     }
 
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
     setState(() => isSaving = true);
+
+    final foodName = widget.result['food'] ?? 'Food';
 
     try {
       await supabase.from('calorie_logs').insert({
-        'user_id': user.id,
-        'food_name': widget.result['food'] ?? 'Unknown',
-        'calories': editedCalories,
+        'family_member_id': widget.familyMemberId,
+        'food_name': foodName,
+        'calories': calories,
         'protein': protein,
         'carbs': carbs,
         'fat': fat,
@@ -82,145 +82,142 @@ class _ScanResultPageState extends State<ScanResultPage> {
 
       if (!mounted) return;
 
+      Navigator.pop(context);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Food logged successfully'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Text('🍽️ $foodName logged successfully!'),
+          backgroundColor: const Color(0xFF7AC943),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
         ),
       );
-
-      Navigator.pop(context, true);
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+      ).showSnackBar(SnackBar(content: Text('Failed to save food: $e')));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
   }
 
-  Widget _nutritionBox(String label, int value) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value.toString(),
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.green,
-              fontSize: 16,
-            ),
+  Widget _nutrient(String label, int value) {
+    return Column(
+      children: [
+        Text(
+          value.toString(),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+            fontSize: 16,
           ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.grey)),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.grey)),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final foodName = widget.result['food'] ?? 'Unknown food';
+    final foodName = widget.result['food'] ?? 'Unknown';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scan Result', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF008B8B),
-        iconTheme: const IconThemeData(color: Colors.white),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.file(
-                widget.imageFile,
-                width: double.infinity,
-                height: 220,
-                fit: BoxFit.cover,
-              ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[400],
+              borderRadius: BorderRadius.circular(2),
             ),
+          ),
 
-            const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-            Text(
-              'Food detected',
-              style: TextStyle(color: Colors.grey.shade700),
+          Text(
+            foodName,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+
+          const SizedBox(height: 16),
+
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 4),
-            Text(
-              foodName,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 16),
-
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  _nutritionBox('Protein', protein),
-                  _nutritionBox('Carb', carbs),
-                  _nutritionBox('Fat', fat),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            const Text(
-              'Calories (kcal)',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _calorieController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-            ),
-
-            const Spacer(),
-
-            Row(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: isSaving ? null : _saveResult,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7AC943),
-                    ),
-                    child: isSaving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Confirm',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                  ),
-                ),
+                _nutrient('Protein', protein),
+                _nutrient('Carb', carbs),
+                _nutrient('Fat', fat),
               ],
             ),
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 16),
+
+          Align(
+            alignment: Alignment.centerLeft,
+            child: const Text(
+              'Calories (kcal)',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          TextField(
+            controller: _calorieController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+          ),
+
+          const SizedBox(height: 20),
+
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: isSaving ? null : _confirmAndSave,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7AC943),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Confirm',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

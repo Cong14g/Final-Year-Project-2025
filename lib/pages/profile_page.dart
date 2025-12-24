@@ -31,13 +31,14 @@ class _ProfilePageState extends State<ProfilePage> {
   bool isSavingTarget = false;
 
   bool isInFamily = false;
+  String? familyMemberId;
 
   @override
   void initState() {
     super.initState();
     _loadProfileData();
-    _loadCalorieTarget();
     _checkIfUserInFamily();
+    _loadCalorieTarget();
   }
 
   void _loadProfileData() {
@@ -49,6 +50,63 @@ class _ProfilePageState extends State<ProfilePage> {
       email = user.email ?? '';
       _nameController.text = name;
     });
+  }
+
+  Future<void> _loadCalorieTarget() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      setState(() => isLoadingTarget = false);
+      return;
+    }
+
+    try {
+      final res = await supabase
+          .from('family_members')
+          .select('id, calorie_target')
+          .eq('email', user.email!)
+          .maybeSingle();
+
+      if (res != null) {
+        familyMemberId = res['id'];
+        targetCalories = res['calorie_target'];
+        _targetController.text = targetCalories?.toString() ?? '';
+      }
+    } catch (e) {
+      debugPrint('Load calorie target error: $e');
+    } finally {
+      if (mounted) setState(() => isLoadingTarget = false);
+    }
+  }
+
+  Future<void> _saveTargetCalories() async {
+    if (familyMemberId == null) return;
+
+    final parsed = int.tryParse(_targetController.text.trim());
+    if (parsed == null) return;
+
+    setState(() => isSavingTarget = true);
+
+    try {
+      await supabase
+          .from('family_members')
+          .update({'calorie_target': parsed})
+          .eq('id', familyMemberId!);
+
+      if (!mounted) return;
+
+      setState(() => targetCalories = parsed);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Daily calorie target saved successfully'),
+          backgroundColor: Color(0xFF7AC943),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Save target error: $e');
+    } finally {
+      if (mounted) setState(() => isSavingTarget = false);
+    }
   }
 
   Future<void> _updateName() async {
@@ -76,60 +134,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Future<void> _loadCalorieTarget() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
-      setState(() => isLoadingTarget = false);
-      return;
-    }
-
-    try {
-      final res = await supabase
-          .from('daily_targets')
-          .select('target_calories')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (res != null) {
-        targetCalories = res['target_calories'];
-        _targetController.text = targetCalories?.toString() ?? '';
-      }
-    } finally {
-      if (mounted) setState(() => isLoadingTarget = false);
-    }
-  }
-
-  Future<void> _saveTargetCalories() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    final parsed = int.tryParse(_targetController.text.trim());
-    if (parsed == null) return;
-
-    setState(() => isSavingTarget = true);
-
-    try {
-      await supabase.from('daily_targets').upsert({
-        'user_id': user.id,
-        'target_calories': parsed,
-        'updated_at': DateTime.now().toIso8601String(),
-      });
-
-      if (!mounted) return;
-      setState(() => targetCalories = parsed);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Daily calorie target saved successfully'),
-          backgroundColor: Color(0xFF7AC943), // app green
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => isSavingTarget = false);
-    }
-  }
-
   Future<void> _checkIfUserInFamily() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
@@ -148,7 +152,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final member = await supabase
         .from('family_members')
         .select('id')
-        .eq('email', user.email ?? '')
+        .eq('email', user.email!)
         .maybeSingle();
 
     if (member != null) setState(() => isInFamily = true);
@@ -286,42 +290,25 @@ class _ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 24),
 
             if (!isInFamily)
-              Row(
-                children: [
-                  Expanded(
-                    child: _fullButton(
-                      'Register Family',
-                      const Color(0xFF008B8B),
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const FamilyRegisterPage(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _fullButton(
-                      'Feedback',
-                      const Color(0xFF008B8B),
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const FeedbackPage()),
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
               _fullButton(
-                'Feedback',
+                'Register Family',
                 const Color(0xFF008B8B),
                 () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                  MaterialPageRoute(builder: (_) => const FamilyRegisterPage()),
                 ),
               ),
+
+            const SizedBox(height: 12),
+
+            _fullButton(
+              'Feedback',
+              const Color(0xFF008B8B),
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FeedbackPage()),
+              ),
+            ),
 
             const SizedBox(height: 12),
 
