@@ -96,7 +96,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Post published successfully!"),
-          backgroundColor: Colors.green,
+          backgroundColor: const Color(0xFF008B8B),
         ),
       );
 
@@ -148,7 +148,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Create Post", style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF0F9D58),
+        backgroundColor: const Color(0xFF008B8B),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
@@ -167,7 +167,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
 
             SwitchListTile(
               title: const Text("Post Now"),
-              activeColor: const Color(0xFF0F9D58),
+              activeColor: const Color(0xFF008B8B),
               value: postNow,
               onChanged: (value) {
                 setState(() => postNow = value);
@@ -184,7 +184,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
               ElevatedButton(
                 onPressed: pickDate,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F9D58),
+                  backgroundColor: const Color(0xFF008B8B),
                 ),
                 child: Text(
                   dateText,
@@ -202,7 +202,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
               ElevatedButton(
                 onPressed: pickTime,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F9D58),
+                  backgroundColor: const Color(0xFF008B8B),
                 ),
                 child: Text(
                   timeText,
@@ -219,7 +219,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
               child: ElevatedButton(
                 onPressed: isLoading ? null : createPost,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F9D58),
+                  backgroundColor: const Color(0xFF008B8B),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(24),
                   ),

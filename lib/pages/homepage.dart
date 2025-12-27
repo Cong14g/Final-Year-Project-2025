@@ -1,3 +1,4 @@
+import 'package:eatwiseapp/widgets/post_card.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'profile_page.dart';
@@ -34,9 +35,6 @@ class _HomePageState extends State<HomePage> {
     fetchCalorieDashboard();
   }
 
-  // --------------------------------------------------
-  // FETCH POSTS
-  // --------------------------------------------------
   Future<void> fetchPosts() async {
     try {
       final res = await supabase
@@ -57,9 +55,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --------------------------------------------------
-  // FETCH DASHBOARD (family_members is source of truth)
-  // --------------------------------------------------
   Future<void> fetchCalorieDashboard() async {
     try {
       final user = supabase.auth.currentUser;
@@ -67,7 +62,6 @@ class _HomePageState extends State<HomePage> {
 
       setState(() => isLoadingDashboard = true);
 
-      // 1️⃣ Get family member row
       final memberRes = await supabase
           .from('family_members')
           .select('id, calorie_target')
@@ -82,23 +76,21 @@ class _HomePageState extends State<HomePage> {
       familyMemberId = memberRes['id'];
       targetCalories = memberRes['calorie_target'] ?? 2000;
 
-      // 2️⃣ Get today logs
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
 
       final logsRes = await supabase
           .from('calorie_logs')
-          .select('calories, created_at')
+          .select('calories')
           .eq('family_member_id', familyMemberId!)
-          .gte('created_at', todayStart.toIso8601String())
-          .order('created_at', ascending: false);
+          .gte('created_at', todayStart.toIso8601String());
 
       todayLogs = List<Map<String, dynamic>>.from(logsRes);
 
-      totalCaloriesToday = todayLogs.fold<int>(0, (sum, log) {
-        final cal = log['calories'];
-        return sum + (cal is int ? cal : int.tryParse(cal.toString()) ?? 0);
-      });
+      totalCaloriesToday = todayLogs.fold<int>(
+        0,
+        (sum, log) => sum + (log['calories'] as int),
+      );
 
       if (mounted) setState(() => isLoadingDashboard = false);
     } catch (e) {
@@ -107,17 +99,11 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --------------------------------------------------
-  // AUTH FIRST NAME
-  // --------------------------------------------------
   Future<String> _getFirstName() async {
     final user = supabase.auth.currentUser;
     return user?.userMetadata?['first_name'] ?? 'User';
   }
 
-  // --------------------------------------------------
-  // NAVIGATION
-  // --------------------------------------------------
   Future<void> _onNavTap(int index) async {
     if (index == 1) {
       final result = await Navigator.push(
@@ -138,14 +124,10 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --------------------------------------------------
-  // DASHBOARD CARD
-  // --------------------------------------------------
   Widget _buildDashboardCard() {
     final percent = targetCalories > 0
         ? (totalCaloriesToday / targetCalories).clamp(0.0, 1.0)
         : 0.0;
-
     final left = targetCalories - totalCaloriesToday;
 
     return Container(
@@ -203,76 +185,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --------------------------------------------------
-  // POST CARD (Option 1 – publishAt USED ✅)
-  // --------------------------------------------------
-  Widget _buildPostCard(Map<String, dynamic> post) {
-    final publishAt =
-        DateTime.tryParse(post['publish_at'] ?? '') ?? DateTime.now();
-
-    final formattedDate =
-        "${publishAt.day.toString().padLeft(2, '0')} "
-        "${_monthName(publishAt.month)} ${publishAt.year}";
-
-    return Container(
-      height: 140,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            post['title'] ?? 'Untitled',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Text(
-              post['content'] ?? '',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Text(
-              'Published • $formattedDate',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _monthName(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[month - 1];
-  }
-
-  // --------------------------------------------------
-  // HOME TAB
-  // --------------------------------------------------
   Widget _buildHomeTab() {
     return FutureBuilder<String>(
       future: _getFirstName(),
@@ -289,86 +201,53 @@ class _HomePageState extends State<HomePage> {
             ),
             centerTitle: true,
           ),
-          body: Padding(
+          body: ListView(
             padding: const EdgeInsets.all(16),
-            child: ListView(
-              children: [
-                Text(
-                  'Welcome back, $name 👋',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF008B8B),
-                  ),
+            children: [
+              Text(
+                'Welcome back, $name 👋',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF008B8B),
                 ),
-                const SizedBox(height: 24),
+              ),
+              const SizedBox(height: 24),
 
-                isLoadingDashboard
-                    ? const Center(child: CircularProgressIndicator())
-                    : _buildDashboardCard(),
+              isLoadingDashboard
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildDashboardCard(),
 
-                const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
-                const Text(
-                  "🍽 Today's Logs",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                  ),
+              const Text(
+                '📢 Latest Posts',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal,
                 ),
-                const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 12),
 
-                todayLogs.isEmpty
-                    ? const Text(
-                        'No food logged today yet.',
-                        style: TextStyle(color: Colors.grey),
-                      )
-                    : Column(
-                        children: todayLogs.map((log) {
-                          return Card(
-                            child: ListTile(
-                              leading: const Icon(Icons.fastfood),
-                              title: Text('${log['calories']} kcal'),
-                              subtitle: Text(
-                                DateTime.parse(
-                                  log['created_at'],
-                                ).toLocal().toString(),
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-
-                const SizedBox(height: 32),
-
-                const Text(
-                  '📢 Latest Posts',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                isLoadingPosts
-                    ? const Center(child: CircularProgressIndicator())
-                    : posts.isEmpty
-                    ? const Text('No posts yet.')
-                    : Column(children: posts.map(_buildPostCard).toList()),
-              ],
-            ),
+              isLoadingPosts
+                  ? const Center(child: CircularProgressIndicator())
+                  : posts.isEmpty
+                  ? const Text('No posts yet.')
+                  : Column(
+                      children: posts
+                          .map(
+                            (post) => PostCard(post: post, supabase: supabase),
+                          )
+                          .toList(),
+                    ),
+            ],
           ),
         );
       },
     );
   }
 
-  // --------------------------------------------------
-  // BOTTOM NAV
-  // --------------------------------------------------
   Widget _buildBottomNav() {
     return Padding(
       padding: const EdgeInsets.all(12),

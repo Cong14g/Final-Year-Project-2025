@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'scan_result_page.dart';
+import 'history_logs_page.dart';
 
 class CameraScanPage extends StatefulWidget {
   const CameraScanPage({super.key});
@@ -112,6 +113,24 @@ class _CameraScanPageState extends State<CameraScanPage> {
         title: const Text("Scan Food", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF008B8B),
         centerTitle: true,
+
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoryLogsPage()),
+              );
+            },
+            child: const Text(
+              "History Logs",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
@@ -148,9 +167,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 24),
-
             Row(
               children: [
                 Expanded(
@@ -181,9 +198,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
                 ),
               ],
             ),
-
             const SizedBox(height: 16),
-
             SizedBox(
               width: double.infinity,
               height: 50,
