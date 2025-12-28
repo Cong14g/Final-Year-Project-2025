@@ -202,6 +202,7 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
 
   Widget _buildMemberCard(Map<String, dynamic> m) {
     final target = m['calorie_target'] ?? 2000;
+    final avatarUrl = m['avatar_url'];
 
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _fetchTodayLogs(m['id']),
@@ -257,7 +258,19 @@ class _FamilyMembersPageState extends State<FamilyMembersPage> {
             child: ExpansionTile(
               leading: CircleAvatar(
                 backgroundColor: const Color(0xFF008B8B),
-                child: Text(m['name'][0].toUpperCase()),
+                backgroundImage:
+                    avatarUrl != null && avatarUrl.toString().isNotEmpty
+                    ? NetworkImage(avatarUrl)
+                    : null,
+                child: avatarUrl == null || avatarUrl.toString().isEmpty
+                    ? Text(
+                        m['name'][0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
               ),
               title: Row(
                 children: [

@@ -1,5 +1,7 @@
 import 'package:eatwiseapp/auth/auth_gate.dart';
 import 'package:eatwiseapp/auth/auth_service.dart';
+import 'package:eatwiseapp/services/local_notification_service.dart';
+import 'package:eatwiseapp/widgets/eatwise_popup.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'forgot_password_page.dart';
@@ -14,6 +16,8 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final authService = AuthService();
+  final supabase = Supabase.instance.client;
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -23,6 +27,46 @@ class _LoginPageState extends State<LoginPage> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkAdminPost(BuildContext context) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final post = await supabase
+        .from('posts')
+        .select('title, content, created_at')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (post == null) return;
+
+    final userData = await supabase
+        .from('users')
+        .select('last_seen_post_at')
+        .eq('id', user.id)
+        .single();
+
+    final lastSeen = userData['last_seen_post_at'];
+
+    if (lastSeen != null &&
+        DateTime.parse(lastSeen).isAfter(DateTime.parse(post['created_at']))) {
+      return;
+    }
+
+    if (!context.mounted) return;
+
+    EatWisePopup.show(
+      context: context,
+      title: 'TEST POPUP',
+      message: 'If you see this, popup works.',
+    );
+
+    await supabase
+        .from('users')
+        .update({'last_seen_post_at': post['created_at']})
+        .eq('id', user.id);
   }
 
   void login() async {
@@ -45,6 +89,14 @@ class _LoginPageState extends State<LoginPage> {
       await authService.signInWithEmailPassword(email, password);
 
       if (!mounted) return;
+
+      LocalNotificationService.show(
+        title: 'Welcome back 👋',
+        body: 'Let’s track your calories today!',
+      );
+
+      await _checkAdminPost(context);
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const AuthGate()),
@@ -94,7 +146,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ],
                     ),
-                    padding: const EdgeInsets.all(0),
                     child: Image.asset('assets/logo.png', fit: BoxFit.contain),
                   ),
                   const SizedBox(height: 30),
@@ -112,14 +163,14 @@ class _LoginPageState extends State<LoginPage> {
                         TextField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          autofillHints: [AutofillHints.email],
+                          autofillHints: const [AutofillHints.email],
                           decoration: const InputDecoration(hintText: 'Email'),
                         ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _passwordController,
                           obscureText: true,
-                          autofillHints: [AutofillHints.password],
+                          autofillHints: const [AutofillHints.password],
                           decoration: const InputDecoration(
                             hintText: 'Password',
                           ),

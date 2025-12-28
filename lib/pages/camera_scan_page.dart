@@ -113,7 +113,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
         title: const Text("Scan Food", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF008B8B),
         centerTitle: true,
-
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           TextButton(
             onPressed: () {
@@ -138,36 +138,32 @@ class _CameraScanPageState extends State<CameraScanPage> {
           children: [
             Expanded(
               child: Center(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      width: 260,
-                      height: 260,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: const Color(0xFF7AC943),
-                          width: 4,
-                        ),
-                      ),
-                      child: _image == null
-                          ? const Center(
-                              child: Text(
-                                "Align food inside frame",
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            )
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-                              child: Image.file(_image!, fit: BoxFit.cover),
-                            ),
+                child: Container(
+                  width: 260,
+                  height: 260,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: const Color(0xFF7AC943),
+                      width: 4,
                     ),
-                  ],
+                  ),
+                  child: _image == null
+                      ? const Center(
+                          child: Text(
+                            "Align food inside frame",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Image.file(_image!, fit: BoxFit.cover),
+                        ),
                 ),
               ),
             ),
             const SizedBox(height: 24),
+
             Row(
               children: [
                 Expanded(
@@ -180,7 +176,10 @@ class _CameraScanPageState extends State<CameraScanPage> {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text("Open Camera"),
+                    child: const Text(
+                      "Open Camera",
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -188,6 +187,11 @@ class _CameraScanPageState extends State<CameraScanPage> {
                   child: OutlinedButton(
                     onPressed: _openGallery,
                     style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF7AC943),
+                      side: const BorderSide(
+                        color: Color(0xFF7AC943),
+                        width: 2,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
@@ -198,7 +202,9 @@ class _CameraScanPageState extends State<CameraScanPage> {
                 ),
               ],
             ),
+
             const SizedBox(height: 16),
+
             SizedBox(
               width: double.infinity,
               height: 50,

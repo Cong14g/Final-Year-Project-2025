@@ -11,6 +11,7 @@ class AdminUserManagementPage extends StatefulWidget {
 
 class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
   final supabase = Supabase.instance.client;
+
   List<Map<String, dynamic>> users = [];
   String searchQuery = '';
   bool isLoading = true;
@@ -30,10 +31,30 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
     });
   }
 
-  Future<void> toggleStatus(String userId, String currentStatus) async {
-    final newStatus = currentStatus == 'Active' ? 'Inactive' : 'Active';
-    await supabase.from('users').update({'status': newStatus}).eq('id', userId);
-    fetchUsers();
+  Future<bool> _confirmDelete(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete User'),
+            content: const Text(
+              'Are you sure you want to delete this user?\nThis action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<void> deleteUser(String userId) async {
@@ -41,13 +62,66 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
     fetchUsers();
   }
 
+  void showEditDialog(Map<String, dynamic> user) {
+    final emailController = TextEditingController(text: user['email']);
+    String status = user['status'] ?? 'Active';
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Edit User'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: status,
+              decoration: const InputDecoration(labelText: 'Status'),
+              items: const [
+                DropdownMenuItem(value: 'Active', child: Text('Active')),
+                DropdownMenuItem(value: 'Inactive', child: Text('Inactive')),
+              ],
+              onChanged: (value) {
+                if (value != null) status = value;
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await supabase
+                  .from('users')
+                  .update({
+                    'email': emailController.text.trim(),
+                    'status': status,
+                  })
+                  .eq('id', user['id']);
+
+              if (!mounted) return;
+              Navigator.pop(context);
+              fetchUsers();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredUsers = users.where((user) {
-      final name = (user['full_name'] ?? '').toString().toLowerCase();
       final email = (user['email'] ?? '').toString().toLowerCase();
-      return name.contains(searchQuery.toLowerCase()) ||
-          email.contains(searchQuery.toLowerCase());
+      return email.contains(searchQuery.toLowerCase());
     }).toList();
 
     return Scaffold(
@@ -66,11 +140,10 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                 
                   TextField(
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search),
-                      hintText: 'Search',
+                      hintText: 'Search by email',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -79,33 +152,25 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                       setState(() => searchQuery = value);
                     },
                   ),
+
                   const SizedBox(height: 16),
 
-                  
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     color: const Color(0xFF00695C),
                     child: Row(
                       children: const [
                         Expanded(
-                          child: Text(
-                            'Fullname',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        Expanded(
+                          flex: 3,
                           child: Text(
                             'Email',
                             style: TextStyle(color: Colors.white),
                           ),
                         ),
+                        SizedBox(width: 100),
+                        SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            'Status',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        Expanded(
+                          flex: 2,
                           child: Text(
                             'Role',
                             style: TextStyle(color: Colors.white),
@@ -116,12 +181,12 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                     ),
                   ),
 
-                 
                   Expanded(
                     child: ListView.builder(
                       itemCount: filteredUsers.length,
                       itemBuilder: (context, index) {
                         final user = filteredUsers[index];
+
                         return Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: const BoxDecoration(
@@ -131,37 +196,59 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                           ),
                           child: Row(
                             children: [
-                              Expanded(child: Text(user['full_name'] ?? '')),
-                              Expanded(child: Text(user['email'] ?? '')),
                               Expanded(
-                                child: GestureDetector(
-                                  onTap: () => toggleStatus(
-                                    user['id'],
-                                    user['status'] ?? 'Active',
+                                flex: 3,
+                                child: Text(user['email'] ?? ''),
+                              ),
+
+                              SizedBox(
+                                width: 100,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
                                   ),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: (user['status'] == 'Active')
-                                          ? Colors.green
-                                          : Colors.grey,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
+                                  decoration: BoxDecoration(
+                                    color: user['status'] == 'Active'
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Center(
                                     child: Text(
                                       user['status'] ?? '',
                                       style: const TextStyle(
                                         color: Colors.white,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                              Expanded(child: Text(user['role'] ?? 'User')),
 
-                             
+                              const SizedBox(width: 12),
+
+                              Expanded(
+                                flex: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    user['role'] ?? 'User',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
                               Row(
                                 children: [
                                   IconButton(
@@ -169,16 +256,21 @@ class _AdminUserManagementPageState extends State<AdminUserManagementPage> {
                                       Icons.edit,
                                       color: Colors.orange,
                                     ),
-                                    onPressed: () {
-                                     
-                                    },
+                                    onPressed: () => showEditDialog(user),
                                   ),
                                   IconButton(
                                     icon: const Icon(
                                       Icons.delete,
                                       color: Colors.red,
                                     ),
-                                    onPressed: () => deleteUser(user['id']),
+                                    onPressed: () async {
+                                      final confirmed = await _confirmDelete(
+                                        context,
+                                      );
+                                      if (confirmed) {
+                                        deleteUser(user['id']);
+                                      }
+                                    },
                                   ),
                                 ],
                               ),

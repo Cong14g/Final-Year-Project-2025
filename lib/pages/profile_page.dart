@@ -21,6 +21,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String name = '';
   String email = '';
   File? profileImage;
+  String? avatarUrl;
 
   bool isEditingName = false;
   final _nameController = TextEditingController();
@@ -62,13 +63,14 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final res = await supabase
           .from('family_members')
-          .select('id, calorie_target')
+          .select('id, calorie_target, avatar_url')
           .eq('email', user.email!)
           .maybeSingle();
 
       if (res != null) {
         familyMemberId = res['id'];
         targetCalories = res['calorie_target'];
+        avatarUrl = res['avatar_url'];
         _targetController.text = targetCalories?.toString() ?? '';
       }
     } catch (e) {
@@ -159,9 +161,34 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _pickImage() async {
+    if (familyMemberId == null) return;
+
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) setState(() => profileImage = File(picked.path));
+    if (picked == null) return;
+
+    final file = File(picked.path);
+    setState(() => profileImage = file);
+
+    try {
+      final fileName = 'avatar_$familyMemberId.png';
+
+      await supabase.storage
+          .from('avatars')
+          .upload(fileName, file, fileOptions: const FileOptions(upsert: true));
+
+      final url = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+      await supabase
+          .from('family_members')
+          .update({'avatar_url': url})
+          .eq('id', familyMemberId!);
+
+      if (!mounted) return;
+      setState(() => avatarUrl = url);
+    } catch (e) {
+      debugPrint('Avatar upload error: $e');
+    }
   }
 
   Widget _inputBox({required String label, required Widget child}) {
@@ -212,8 +239,10 @@ class _ProfilePageState extends State<ProfilePage> {
               backgroundColor: const Color(0xFF008B8B),
               backgroundImage: profileImage != null
                   ? FileImage(profileImage!)
+                  : avatarUrl != null
+                  ? NetworkImage(avatarUrl!) as ImageProvider
                   : null,
-              child: profileImage == null
+              child: profileImage == null && avatarUrl == null
                   ? Text(
                       name[0].toUpperCase(),
                       style: const TextStyle(fontSize: 28, color: Colors.white),

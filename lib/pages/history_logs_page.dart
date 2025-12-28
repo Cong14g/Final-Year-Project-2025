@@ -93,14 +93,12 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
     }
   }
 
-  /// 🔥 Delete from Supabase
   Future<void> _deleteLog(String logId) async {
     await supabase.from('calorie_logs').delete().eq('id', logId);
 
     _loadFamilyMemberAndHistory();
   }
 
-  /// 🔔 Confirm dialog
   Future<bool> _confirmDelete(BuildContext context) async {
     return await showDialog<bool>(
           context: context,
@@ -170,7 +168,6 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        /// SECTION HEADER
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -189,7 +186,6 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
                           ),
                         ),
 
-                        /// FOOD ITEMS (Swipe to delete)
                         ...logs.map((log) {
                           return Dismissible(
                             key: ValueKey(log['id']),

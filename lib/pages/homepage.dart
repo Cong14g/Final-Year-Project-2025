@@ -1,4 +1,5 @@
 import 'package:eatwiseapp/widgets/post_card.dart';
+import 'package:eatwiseapp/widgets/eatwise_popup.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'profile_page.dart';
@@ -31,8 +32,54 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     fetchPosts();
     fetchCalorieDashboard();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAdminPost();
+    });
+  }
+
+  Future<void> _checkAdminPost() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final post = await supabase
+        .from('posts')
+        .select('title, content, created_at')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (post == null) return;
+
+    final userData = await supabase
+        .from('users')
+        .select('last_seen_post_at')
+        .eq('id', user.id)
+        .single();
+
+    final lastSeen = userData['last_seen_post_at'];
+
+    if (lastSeen != null &&
+        DateTime.parse(lastSeen).isAfter(DateTime.parse(post['created_at']))) {
+      return;
+    }
+
+    if (!mounted) return;
+
+    EatWisePopup.show(
+      context: context,
+      title: post['title'],
+      message: post['content'],
+      buttonText: 'Got it',
+    );
+
+    await supabase
+        .from('users')
+        .update({'last_seen_post_at': post['created_at']})
+        .eq('id', user.id);
   }
 
   Future<void> fetchPosts() async {
