@@ -1,5 +1,5 @@
-import 'package:eatwiseapp/auth/auth_gate.dart';
 import 'package:eatwiseapp/auth/auth_service.dart';
+import 'package:eatwiseapp/auth/auth_gate.dart';
 import 'package:flutter/material.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -17,9 +17,10 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
   bool _isLoading = false;
 
-  void signUp() async {
+  Future<void> signUp() async {
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
@@ -64,26 +65,26 @@ class _RegisterPageState extends State<RegisterPage> {
       if (response.user != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Successfully registered!"),
+            duration: Duration(seconds: 4),
             backgroundColor: Color(0xFF0F9D58),
+            content: Text(
+              "🎉 Welcome to EatWise!\n"
+              "Your account is ready. Start scanning food and tracking your calories today!",
+            ),
           ),
         );
 
-        Navigator.pushReplacement(
-          context,
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
         );
       }
     } catch (e) {
-      final errorMessage = e.toString().contains("user_already_exists")
-          ? "This email is already registered"
-          : "Registration failed: $e";
-
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      ).showSnackBar(SnackBar(content: Text("Registration failed: $e")));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -132,7 +133,6 @@ class _RegisterPageState extends State<RegisterPage> {
           Positioned.fill(
             child: Image.asset('assets/EAT.png', fit: BoxFit.cover),
           ),
-
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24),

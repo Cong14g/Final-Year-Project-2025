@@ -9,10 +9,12 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final supabase = Supabase.instance.client;
+
     return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
+      stream: supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
-        final session = Supabase.instance.client.auth.currentSession;
+        final session = snapshot.data?.session;
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -24,14 +26,13 @@ class AuthGate extends StatelessWidget {
           return const LoginPage();
         }
 
-        final user = session.user;
-        final role = user.userMetadata?['role'] ?? 'user';
+        final role = session.user.userMetadata?['role'] ?? 'user';
 
         if (role == 'admin') {
           return const AdminDashboardPage();
-        } else {
-          return const HomePage();
         }
+
+        return const HomePage();
       },
     );
   }

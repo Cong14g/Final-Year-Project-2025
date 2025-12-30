@@ -1,7 +1,5 @@
-import 'package:eatwiseapp/auth/auth_gate.dart';
 import 'package:eatwiseapp/auth/auth_service.dart';
 import 'package:eatwiseapp/services/local_notification_service.dart';
-import 'package:eatwiseapp/widgets/eatwise_popup.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'forgot_password_page.dart';
@@ -20,6 +18,7 @@ class _LoginPageState extends State<LoginPage> {
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _isLoading = false;
 
   @override
@@ -29,47 +28,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  Future<void> _checkAdminPost(BuildContext context) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    final post = await supabase
-        .from('posts')
-        .select('title, content, created_at')
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
-
-    if (post == null) return;
-
-    final userData = await supabase
-        .from('users')
-        .select('last_seen_post_at')
-        .eq('id', user.id)
-        .single();
-
-    final lastSeen = userData['last_seen_post_at'];
-
-    if (lastSeen != null &&
-        DateTime.parse(lastSeen).isAfter(DateTime.parse(post['created_at']))) {
-      return;
-    }
-
-    if (!context.mounted) return;
-
-    EatWisePopup.show(
-      context: context,
-      title: 'TEST POPUP',
-      message: 'If you see this, popup works.',
-    );
-
-    await supabase
-        .from('users')
-        .update({'last_seen_post_at': post['created_at']})
-        .eq('id', user.id);
-  }
-
-  void login() async {
+  Future<void> login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -90,17 +49,15 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
-      LocalNotificationService.show(
-        title: 'Welcome back 👋',
-        body: 'Let’s track your calories today!',
-      );
+      final user = supabase.auth.currentUser;
+      final role = user?.userMetadata?['role'] ?? 'user';
 
-      await _checkAdminPost(context);
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthGate()),
-      );
+      if (role != 'admin') {
+        LocalNotificationService.show(
+          title: 'Welcome back 👋',
+          body: 'Let’s track your calories today!',
+        );
+      }
     } on AuthApiException catch (e) {
       final message = e.message.contains("Invalid login credentials")
           ? "Incorrect email or password"
@@ -115,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
         const SnackBar(content: Text("Unexpected error occurred")),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -229,7 +186,6 @@ class _LoginPageState extends State<LoginPage> {
                             },
                             child: const Text(
                               'Forgotten your password?',
-                              textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.redAccent,
                                 fontWeight: FontWeight.w500,
@@ -237,10 +193,10 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 30),
                 ],
               ),
             ),

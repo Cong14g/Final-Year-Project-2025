@@ -18,7 +18,7 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _loadFamilyMemberAndHistory();
+    _loadHistory();
   }
 
   DateTime _onlyDate(DateTime dt) {
@@ -50,53 +50,65 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
     return '${logDate.day} ${months[logDate.month - 1]} ${logDate.year}';
   }
 
-  Future<void> _loadFamilyMemberAndHistory() async {
+  Future<void> _loadHistory() async {
     setState(() => isLoading = true);
 
     final user = supabase.auth.currentUser;
-    if (user == null || user.email == null) return;
-
-    final member = await supabase
-        .from('family_members')
-        .select('id')
-        .eq('email', user.email!)
-        .maybeSingle();
-
-    if (member == null) {
+    if (user == null) {
       setState(() => isLoading = false);
       return;
     }
 
-    familyMemberId = member['id'];
+    try {
+      final member = await supabase
+          .from('family_members')
+          .select('id')
+          .eq('email', user.email!)
+          .maybeSingle();
 
-    final data = await supabase
-        .from('calorie_logs')
-        .select()
-        .eq('family_member_id', familyMemberId!)
-        .order('timestamp', ascending: false);
+      List<dynamic> data;
 
-    final Map<String, List<dynamic>> temp = {};
+      if (member != null) {
+        familyMemberId = member['id'];
 
-    for (final log in data) {
-      final date = _onlyDate(DateTime.parse(log['timestamp']).toLocal());
-      final section = _sectionTitle(date);
+        data = await supabase
+            .from('calorie_logs')
+            .select()
+            .eq('family_member_id', familyMemberId!)
+            .order('timestamp', ascending: false);
+      } else {
+        data = await supabase
+            .from('calorie_logs')
+            .select()
+            .eq('user_id', user.id)
+            .order('timestamp', ascending: false);
+      }
 
-      temp.putIfAbsent(section, () => []);
-      temp[section]!.add(log);
-    }
+      final Map<String, List<dynamic>> temp = {};
 
-    if (mounted) {
-      setState(() {
-        groupedLogs = temp;
-        isLoading = false;
-      });
+      for (final log in data) {
+        final date = _onlyDate(DateTime.parse(log['timestamp']).toLocal());
+        final section = _sectionTitle(date);
+
+        temp.putIfAbsent(section, () => []);
+        temp[section]!.add(log);
+      }
+
+      if (mounted) {
+        setState(() {
+          groupedLogs = temp;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('History load error: $e');
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   Future<void> _deleteLog(String logId) async {
     await supabase.from('calorie_logs').delete().eq('id', logId);
-
-    _loadFamilyMemberAndHistory();
+    _loadHistory();
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
@@ -127,15 +139,13 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
       appBar: AppBar(
         backgroundColor: const Color(0xFF008B8B),
         centerTitle: true,
         title: const Text('History Log', style: TextStyle(color: Colors.white)),
       ),
-
       body: RefreshIndicator(
-        onRefresh: _loadFamilyMemberAndHistory,
+        onRefresh: _loadHistory,
         child: isLoading
             ? const Center(child: CircularProgressIndicator())
             : groupedLogs.isEmpty
@@ -158,9 +168,7 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
-
                   ...groupedLogs.entries.map((entry) {
                     final section = entry.key;
                     final logs = entry.value;
@@ -185,7 +193,6 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
                             ),
                           ),
                         ),
-
                         ...logs.map((log) {
                           return Dismissible(
                             key: ValueKey(log['id']),
@@ -226,7 +233,6 @@ class _HistoryLogsPageState extends State<HistoryLogsPage> {
                             ),
                           );
                         }).toList(),
-
                         const SizedBox(height: 16),
                       ],
                     );

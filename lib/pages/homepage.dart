@@ -1,10 +1,12 @@
 import 'package:eatwiseapp/widgets/post_card.dart';
-import 'package:eatwiseapp/widgets/eatwise_popup.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'profile_page.dart';
 import 'family_members_page.dart';
 import 'camera_scan_page.dart';
+import 'package:eatwiseapp/widgets/eatwise_popup.dart';
+
+bool popupAlreadyShownThisSession = false;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -32,54 +34,56 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-
     fetchPosts();
     fetchCalorieDashboard();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAdminPost();
-    });
+    _checkUnreadPost();
   }
 
-  Future<void> _checkAdminPost() async {
+  Future<void> _checkUnreadPost() async {
+    if (popupAlreadyShownThisSession) return;
+    popupAlreadyShownThisSession = true;
+
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final post = await supabase
-        .from('posts')
-        .select('title, content, created_at')
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
+    try {
+      final viewedRes = await supabase
+          .from('post_views')
+          .select('post_id')
+          .eq('user_id', user.id);
 
-    if (post == null) return;
+      final viewedIds = List<Map<String, dynamic>>.from(
+        viewedRes,
+      ).map((e) => e['post_id'] as String).toList();
 
-    final userData = await supabase
-        .from('users')
-        .select('last_seen_post_at')
-        .eq('id', user.id)
-        .single();
+      final post = await supabase
+          .from('posts')
+          .select()
+          .lte('publish_at', 'now()')
+          .order('publish_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
-    final lastSeen = userData['last_seen_post_at'];
+      if (!mounted || post == null || post['id'] == null) return;
+      if (viewedIds.contains(post['id'])) return;
 
-    if (lastSeen != null &&
-        DateTime.parse(lastSeen).isAfter(DateTime.parse(post['created_at']))) {
-      return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        EatWisePopup.show(
+          context: context,
+          title: post['title'] ?? 'Announcement',
+          message: post['content'] ?? '',
+          buttonText: 'Got it',
+          onPressed: () async {
+            await supabase.from('post_views').insert({
+              'post_id': post['id'],
+              'user_id': user.id,
+            });
+          },
+        );
+      });
+    } catch (e) {
+      debugPrint('Popup post error: $e');
     }
-
-    if (!mounted) return;
-
-    EatWisePopup.show(
-      context: context,
-      title: post['title'],
-      message: post['content'],
-      buttonText: 'Got it',
-    );
-
-    await supabase
-        .from('users')
-        .update({'last_seen_post_at': post['created_at']})
-        .eq('id', user.id);
   }
 
   Future<void> fetchPosts() async {
@@ -87,7 +91,7 @@ class _HomePageState extends State<HomePage> {
       final res = await supabase
           .from('posts')
           .select()
-          .lte('publish_at', DateTime.now().toIso8601String())
+          .lte('publish_at', 'now()')
           .order('publish_at', ascending: false);
 
       if (!mounted) return;
@@ -105,9 +109,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> fetchCalorieDashboard() async {
     try {
       final user = supabase.auth.currentUser;
-      if (user == null || user.email == null) return;
+      if (user == null) return;
 
       setState(() => isLoadingDashboard = true);
+
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
 
       final memberRes = await supabase
           .from('family_members')
@@ -115,24 +122,36 @@ class _HomePageState extends State<HomePage> {
           .eq('email', user.email!)
           .maybeSingle();
 
-      if (memberRes == null) {
-        setState(() => isLoadingDashboard = false);
-        return;
+      if (memberRes != null) {
+        familyMemberId = memberRes['id'];
+        targetCalories = memberRes['calorie_target'] ?? 2000;
+
+        final logsRes = await supabase
+            .from('calorie_logs')
+            .select('calories')
+            .eq('family_member_id', familyMemberId!)
+            .gte('created_at', todayStart.toIso8601String());
+
+        todayLogs = List<Map<String, dynamic>>.from(logsRes);
+      } else {
+        familyMemberId = null;
+
+        final userRes = await supabase
+            .from('users')
+            .select('daily_calorie_target')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        targetCalories = userRes?['daily_calorie_target'] ?? 2000;
+
+        final logsRes = await supabase
+            .from('calorie_logs')
+            .select('calories')
+            .eq('user_id', user.id)
+            .gte('created_at', todayStart.toIso8601String());
+
+        todayLogs = List<Map<String, dynamic>>.from(logsRes);
       }
-
-      familyMemberId = memberRes['id'];
-      targetCalories = memberRes['calorie_target'] ?? 2000;
-
-      final now = DateTime.now();
-      final todayStart = DateTime(now.year, now.month, now.day);
-
-      final logsRes = await supabase
-          .from('calorie_logs')
-          .select('calories')
-          .eq('family_member_id', familyMemberId!)
-          .gte('created_at', todayStart.toIso8601String());
-
-      todayLogs = List<Map<String, dynamic>>.from(logsRes);
 
       totalCaloriesToday = todayLogs.fold<int>(
         0,
@@ -175,6 +194,7 @@ class _HomePageState extends State<HomePage> {
     final percent = targetCalories > 0
         ? (totalCaloriesToday / targetCalories).clamp(0.0, 1.0)
         : 0.0;
+
     final left = targetCalories - totalCaloriesToday;
 
     return Container(
@@ -200,7 +220,7 @@ class _HomePageState extends State<HomePage> {
                 child: CircularProgressIndicator(
                   value: percent,
                   strokeWidth: 12,
-                  backgroundColor: Colors.grey[300],
+                  backgroundColor: Colors.grey,
                   color: Colors.teal,
                 ),
               ),
@@ -260,13 +280,10 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: 24),
-
               isLoadingDashboard
                   ? const Center(child: CircularProgressIndicator())
                   : _buildDashboardCard(),
-
               const SizedBox(height: 32),
-
               const Text(
                 '📢 Latest Posts',
                 style: TextStyle(
@@ -276,7 +293,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: 12),
-
               isLoadingPosts
                   ? const Center(child: CircularProgressIndicator())
                   : posts.isEmpty

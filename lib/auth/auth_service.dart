@@ -27,9 +27,6 @@ class AuthService {
     );
 
     if (response.user != null) {
-      await _supabase.auth.signInWithPassword(email: email, password: password);
-
-      // Optional: Create a parallel user record in your public `users` table
       await _supabase.from('users').insert({
         'id': response.user!.id,
         'email': email,
@@ -42,17 +39,11 @@ class AuthService {
     return response;
   }
 
-  Future<void> sendPasswordResetEmail(String email) async {
-    await _supabase.auth.resetPasswordForEmail(email);
-  }
-
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
 
-  Future<String?> getCurrentUserFirstName() async {
-    final session = _supabase.auth.currentSession;
-    final user = session?.user;
-    return user?.userMetadata?['first_name']?.toString();
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _supabase.auth.resetPasswordForEmail(email);
   }
 }

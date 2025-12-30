@@ -42,9 +42,11 @@ class _CameraScanPageState extends State<CameraScanPage> {
         .eq('email', user.email!)
         .maybeSingle();
 
-    if (res != null && mounted) {
-      setState(() => familyMemberId = res['id']);
-    }
+    if (!mounted) return;
+
+    setState(() {
+      familyMemberId = res?['id'];
+    });
   }
 
   Future<void> _openCamera() async {
@@ -64,7 +66,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
   }
 
   Future<void> _scanImage() async {
-    if (_image == null || familyMemberId == null) return;
+    if (_image == null) return;
 
     setState(() => isScanning = true);
 
@@ -93,7 +95,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
         builder: (_) => ScanResultSheet(
           imageFile: _image!,
           result: result,
-          familyMemberId: familyMemberId!,
+          familyMemberId: familyMemberId,
         ),
       );
     } catch (e) {
@@ -124,10 +126,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
             },
             child: const Text(
               "History Logs",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: Colors.white),
             ),
           ),
         ],
@@ -174,7 +173,6 @@ class _CameraScanPageState extends State<CameraScanPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text(
                       "Open Camera",
@@ -195,7 +193,6 @@ class _CameraScanPageState extends State<CameraScanPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text("Photos"),
                   ),
@@ -209,10 +206,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed:
-                    (_image != null && !isScanning && familyMemberId != null)
-                    ? _scanImage
-                    : null,
+                onPressed: (_image != null && !isScanning) ? _scanImage : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF7AC943),
                   shape: RoundedRectangleBorder(
@@ -220,14 +214,7 @@ class _CameraScanPageState extends State<CameraScanPage> {
                   ),
                 ),
                 child: isScanning
-                    ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: Colors.white,
-                        ),
-                      )
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                         "Scan Food",
                         style: TextStyle(color: Colors.white),

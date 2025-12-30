@@ -6,13 +6,13 @@ import 'package:eatwiseapp/services/local_notification_service.dart';
 class ScanResultSheet extends StatefulWidget {
   final File imageFile;
   final Map<String, dynamic> result;
-  final String familyMemberId;
+  final String? familyMemberId;
 
   const ScanResultSheet({
     super.key,
     required this.imageFile,
     required this.result,
-    required this.familyMemberId,
+    this.familyMemberId,
   });
 
   @override
@@ -57,56 +57,6 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
     super.dispose();
   }
 
-  // 🔔 CALORIE NOTIFICATION LOGIC
-  Future<void> _checkCaloriesAndNotify() async {
-    final today = DateTime.now();
-    final startOfDay = DateTime(today.year, today.month, today.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
-    // 1️⃣ Get today’s total calories
-    final logs = await supabase
-        .from('calorie_logs')
-        .select('calories')
-        .eq('family_member_id', widget.familyMemberId)
-        .gte('created_at', startOfDay.toIso8601String())
-        .lt('created_at', endOfDay.toIso8601String());
-
-    final int totalCaloriesToday = logs.fold<int>(
-      0,
-      (sum, item) => sum + (item['calories'] as int),
-    );
-
-    // 2️⃣ Get user calorie target
-    final member = await supabase
-        .from('family_members')
-        .select('calorie_target')
-        .eq('id', widget.familyMemberId)
-        .single();
-
-    final int targetCalories = member['calorie_target'] ?? 0;
-
-    if (targetCalories <= 0) return;
-
-    // 3️⃣ Trigger notification
-    if (totalCaloriesToday >= targetCalories) {
-      LocalNotificationService.show(
-        title: '⚠️ Calorie Limit Exceeded',
-        body:
-            'You exceeded your daily target by ${totalCaloriesToday - targetCalories} kcal',
-      );
-    } else if (totalCaloriesToday >= targetCalories * 0.8) {
-      LocalNotificationService.show(
-        title: '🔔 Almost There',
-        body: 'Only ${targetCalories - totalCaloriesToday} kcal left for today',
-      );
-    } else {
-      LocalNotificationService.show(
-        title: '🍽️ Calories Remaining',
-        body: '${targetCalories - totalCaloriesToday} kcal left today',
-      );
-    }
-  }
-
   Future<void> _confirmAndSave() async {
     final calories = int.tryParse(_calorieController.text.trim());
     if (calories == null || calories <= 0) {
@@ -116,42 +66,88 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
       return;
     }
 
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
     setState(() => isSaving = true);
 
     final foodName = widget.result['food'] ?? 'Food';
 
     try {
-      await supabase.from('calorie_logs').insert({
-        'family_member_id': widget.familyMemberId,
+      final data = {
+        'user_id': user.id,
         'food_name': foodName,
         'calories': calories,
         'protein': protein,
         'carbs': carbs,
         'fat': fat,
         'created_at': DateTime.now().toIso8601String(),
-      });
+      };
 
-      // 🔔 CHECK & NOTIFY AFTER SAVE
+      if (widget.familyMemberId != null) {
+        data['family_member_id'] = widget.familyMemberId;
+      }
+
+      await supabase.from('calorie_logs').insert(data);
+
       await _checkCaloriesAndNotify();
 
       if (!mounted) return;
-
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('🍽️ $foodName logged successfully!'),
           backgroundColor: const Color(0xFF7AC943),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save food: $e')));
     } finally {
       if (mounted) setState(() => isSaving = false);
+    }
+  }
+
+  Future<void> _checkCaloriesAndNotify() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+
+    int targetCalories = 2000;
+    List logs;
+
+    if (widget.familyMemberId != null) {
+      final member = await supabase
+          .from('family_members')
+          .select('calorie_target')
+          .eq('id', widget.familyMemberId!)
+          .single();
+
+      targetCalories = member['calorie_target'] ?? 2000;
+
+      logs = await supabase
+          .from('calorie_logs')
+          .select('calories')
+          .eq('family_member_id', widget.familyMemberId!)
+          .gte('created_at', start.toIso8601String());
+    } else {
+      logs = await supabase
+          .from('calorie_logs')
+          .select('calories')
+          .eq('user_id', user.id)
+          .gte('created_at', start.toIso8601String());
+    }
+
+    final total = logs.fold<int>(
+      0,
+      (sum, item) => sum + (item['calories'] as int),
+    );
+
+    if (total >= targetCalories) {
+      LocalNotificationService.show(
+        title: '⚠️ Calorie Limit Exceeded',
+        body: 'You exceeded your daily calorie target',
+      );
     }
   }
 
@@ -216,51 +212,27 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
             ),
           ),
           const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'Calories (kcal)',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(height: 6),
           TextField(
             controller: _calorieController,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(border: OutlineInputBorder()),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: isSaving ? null : _confirmAndSave,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7AC943),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: isSaving ? null : _confirmAndSave,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7AC943),
-                  ),
-                  child: isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Confirm',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                ),
-              ),
-            ],
+              child: isSaving
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text(
+                      'Confirm',
+                      style: TextStyle(color: Colors.white),
+                    ),
+            ),
           ),
         ],
       ),

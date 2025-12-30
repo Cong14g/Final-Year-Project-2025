@@ -38,8 +38,9 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _loadProfileData();
-    _checkIfUserInFamily();
-    _loadCalorieTarget();
+    _checkIfUserInFamily().then((_) {
+      _loadCalorieTarget();
+    });
   }
 
   void _loadProfileData() {
@@ -61,38 +62,59 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     try {
-      final res = await supabase
-          .from('family_members')
-          .select('id, calorie_target, avatar_url')
-          .eq('email', user.email!)
-          .maybeSingle();
+      if (familyMemberId != null) {
+        final res = await supabase
+            .from('family_members')
+            .select('calorie_target, avatar_url')
+            .eq('id', familyMemberId!)
+            .maybeSingle();
 
-      if (res != null) {
-        familyMemberId = res['id'];
-        targetCalories = res['calorie_target'];
-        avatarUrl = res['avatar_url'];
-        _targetController.text = targetCalories?.toString() ?? '';
+        if (res != null) {
+          targetCalories = res['calorie_target'];
+          avatarUrl = res['avatar_url'];
+        }
+      } else {
+        final res = await supabase
+            .from('users')
+            .select('daily_calorie_target, avatar_url')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (res != null) {
+          targetCalories = res['daily_calorie_target'];
+          avatarUrl = res['avatar_url'];
+        }
       }
+
+      _targetController.text = targetCalories?.toString() ?? '';
     } catch (e) {
-      debugPrint('Load calorie target error: $e');
+      debugPrint('Load profile data error: $e');
     } finally {
       if (mounted) setState(() => isLoadingTarget = false);
     }
   }
 
   Future<void> _saveTargetCalories() async {
-    if (familyMemberId == null) return;
-
     final parsed = int.tryParse(_targetController.text.trim());
     if (parsed == null) return;
+
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
 
     setState(() => isSavingTarget = true);
 
     try {
-      await supabase
-          .from('family_members')
-          .update({'calorie_target': parsed})
-          .eq('id', familyMemberId!);
+      if (familyMemberId != null) {
+        await supabase
+            .from('family_members')
+            .update({'calorie_target': parsed})
+            .eq('id', familyMemberId!);
+      } else {
+        await supabase
+            .from('users')
+            .update({'daily_calorie_target': parsed})
+            .eq('id', user.id);
+      }
 
       if (!mounted) return;
 
@@ -140,28 +162,21 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final admin = await supabase
-        .from('families')
-        .select('id')
-        .eq('admin_user_id', user.id)
-        .maybeSingle();
-
-    if (admin != null) {
-      setState(() => isInFamily = true);
-      return;
-    }
-
     final member = await supabase
         .from('family_members')
         .select('id')
         .eq('email', user.email!)
         .maybeSingle();
 
-    if (member != null) setState(() => isInFamily = true);
+    if (member != null) {
+      familyMemberId = member['id'];
+      isInFamily = true;
+    }
   }
 
   Future<void> _pickImage() async {
-    if (familyMemberId == null) return;
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
 
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -171,7 +186,9 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => profileImage = file);
 
     try {
-      final fileName = 'avatar_$familyMemberId.png';
+      final fileName = familyMemberId != null
+          ? 'avatar_$familyMemberId.png'
+          : 'avatar_${user.id}.png';
 
       await supabase.storage
           .from('avatars')
@@ -179,10 +196,17 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final url = supabase.storage.from('avatars').getPublicUrl(fileName);
 
-      await supabase
-          .from('family_members')
-          .update({'avatar_url': url})
-          .eq('id', familyMemberId!);
+      if (familyMemberId != null) {
+        await supabase
+            .from('family_members')
+            .update({'avatar_url': url})
+            .eq('id', familyMemberId!);
+      } else {
+        await supabase
+            .from('users')
+            .update({'avatar_url': url})
+            .eq('id', user.id);
+      }
 
       if (!mounted) return;
       setState(() => avatarUrl = url);
@@ -240,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
               backgroundImage: profileImage != null
                   ? FileImage(profileImage!)
                   : avatarUrl != null
-                  ? NetworkImage(avatarUrl!) as ImageProvider
+                  ? NetworkImage(avatarUrl!)
                   : null,
               child: profileImage == null && avatarUrl == null
                   ? Text(

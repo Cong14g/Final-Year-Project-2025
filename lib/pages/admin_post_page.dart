@@ -19,41 +19,33 @@ class _AdminPostPageState extends State<AdminPostPage> {
   bool postNow = true;
   bool isLoading = false;
 
-  Future<void> pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate ?? now,
-      firstDate: now,
-      lastDate: DateTime(now.year + 5),
-    );
+  List<Map<String, dynamic>> posts = [];
+  String? editingPostId;
 
-    if (picked != null) {
-      setState(() => selectedDate = picked);
-    }
+  @override
+  void initState() {
+    super.initState();
+    _fetchPosts();
   }
 
-  Future<void> pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: selectedTime ?? TimeOfDay.now(),
-    );
+  Future<void> _fetchPosts() async {
+    final res = await supabase
+        .from('posts')
+        .select()
+        .order('created_at', ascending: false);
 
-    if (picked != null) {
-      setState(() => selectedTime = picked);
-    }
+    setState(() {
+      posts = List<Map<String, dynamic>>.from(res);
+    });
   }
 
-  Future<void> createPost() async {
+  Future<void> createOrUpdatePost() async {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
 
     if (title.isEmpty || content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Title and content cannot be empty"),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text("Title and content cannot be empty")),
       );
       return;
     }
@@ -68,10 +60,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
       } else {
         if (selectedDate == null || selectedTime == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Please select both date and time"),
-              backgroundColor: Colors.red,
-            ),
+            const SnackBar(content: Text("Please select date & time")),
           );
           setState(() => isLoading = false);
           return;
@@ -86,34 +75,177 @@ class _AdminPostPageState extends State<AdminPostPage> {
         );
       }
 
-      await supabase.from('posts').insert({
-        'title': title,
-        'content': content,
-        'publish_at': publishAt.toIso8601String(),
-        'created_by': supabase.auth.currentUser?.id,
-      });
+      if (editingPostId == null) {
+        await supabase.from('posts').insert({
+          'title': title,
+          'content': content,
+          'publish_at': publishAt.toIso8601String(),
+          'created_by': supabase.auth.currentUser?.id,
+        });
+      } else {
+        await supabase
+            .from('posts')
+            .update({
+              'title': title,
+              'content': content,
+              'publish_at': publishAt.toIso8601String(),
+            })
+            .eq('id', editingPostId!);
+      }
+
+      _resetForm();
+      await _fetchPosts();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Post published successfully!"),
+        SnackBar(
+          content: Text(
+            editingPostId == null
+                ? "Post published successfully!"
+                : "Post updated successfully!",
+          ),
           backgroundColor: const Color(0xFF008B8B),
         ),
       );
-
-      Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to publish post: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed: $e")));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-  Widget _buildInputField(
+  Future<void> _deletePost(String id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Post"),
+        content: const Text("Are you sure you want to delete this post?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    await supabase.from('posts').delete().eq('id', id);
+    await _fetchPosts();
+  }
+
+  void _editPost(Map<String, dynamic> post) {
+    setState(() {
+      editingPostId = post['id'];
+      _titleController.text = post['title'];
+      _contentController.text = post['content'];
+      postNow = true;
+    });
+  }
+
+  void _resetForm() {
+    setState(() {
+      editingPostId = null;
+      _titleController.clear();
+      _contentController.clear();
+      selectedDate = null;
+      selectedTime = null;
+      postNow = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Add Post", style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF008B8B),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _input("Title", _titleController),
+            _input("Content", _contentController, maxLines: 5),
+
+            SwitchListTile(
+              title: const Text("Post Now"),
+              activeColor: const Color(0xFF008B8B),
+              value: postNow,
+              onChanged: (v) => setState(() => postNow = v),
+            ),
+
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : createOrUpdatePost,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF008B8B),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+                child: Text(
+                  editingPostId == null ? "Publish Post" : "Update Post",
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 30),
+            const Divider(),
+            const SizedBox(height: 10),
+
+            const Text(
+              "Previous Posts",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            ...posts.map(
+              (post) => Card(
+                child: ListTile(
+                  title: Text(post['title']),
+                  subtitle: Text(
+                    post['content'],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.teal),
+                        onPressed: () => _editPost(post),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _deletePost(post['id']),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _input(
     String label,
     TextEditingController controller, {
     int maxLines = 1,
@@ -122,7 +254,7 @@ class _AdminPostPageState extends State<AdminPostPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         TextField(
           controller: controller,
           maxLines: maxLines,
@@ -132,109 +264,6 @@ class _AdminPostPageState extends State<AdminPostPage> {
         ),
         const SizedBox(height: 16),
       ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dateText = selectedDate == null
-        ? "Select date"
-        : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}";
-
-    final timeText = selectedTime == null
-        ? "Select time"
-        : "${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}";
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Create Post", style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF008B8B),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInputField("Post Title", _titleController),
-            _buildInputField("Post Content", _contentController, maxLines: 5),
-
-            const SizedBox(height: 10),
-            const Text(
-              "Publish Settings",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-
-            SwitchListTile(
-              title: const Text("Post Now"),
-              activeColor: const Color(0xFF008B8B),
-              value: postNow,
-              onChanged: (value) {
-                setState(() => postNow = value);
-              },
-            ),
-
-            if (!postNow) ...[
-              const SizedBox(height: 10),
-              const Text(
-                "Select Publish Date",
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 4),
-              ElevatedButton(
-                onPressed: pickDate,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF008B8B),
-                ),
-                child: Text(
-                  dateText,
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              const Text(
-                "Select Publish Time",
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 4),
-              ElevatedButton(
-                onPressed: pickTime,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF008B8B),
-                ),
-                child: Text(
-                  timeText,
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 30),
-
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : createPost,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF008B8B),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-                child: isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "Publish Post",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
